@@ -2,6 +2,8 @@
 
 A userscript that summarizes and simplifies web articles using the OpenAI API. Get quick summaries of any article or selected text directly in your browser.
 
+> **Latest Version**: 1.1.0 | [See What's New](CHANGELOG.md)
+
 ## Features
 
 - **Two Summary Sizes**: Choose between Large (50%) or Small (20%) summaries
@@ -12,7 +14,7 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 - **Domain Controls**: Enable/disable on specific websites using allowlist or denylist
 - **Auto-Simplify**: Optionally auto-summarize articles on page load
 - **Usage Statistics**: Track API token usage and estimated costs
-- **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile
+- **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile, with full touch support for dragging
 
 ## Installation
 
@@ -32,9 +34,10 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 ### Quick Start
 
 1. Navigate to any article page
-2. Click the **Summarize** panel that appears on the right side of the screen
-3. Choose **Large** (50% length) or **Small** (20% length) summary
-4. View your summary in the overlay that appears
+2. **Enable** the script for the current domain from the menu
+3. Click the **Summarize** panel that appears on the right side of the screen
+4. Choose **Large** (50% length) or **Small** (20% length) summary
+5. View your summary in the overlay that appears
 
 ### Summarizing Selected Text
 

@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Modified from Neutralize Headlines by Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Summarize and simplify web articles using OpenAI API with customizable digest sizes
 // @match        *://*/*
 // @exclude      about:*
@@ -36,7 +36,7 @@
     const UI_ATTR = 'data-digest-ui';
     const HOST = location.hostname;
 
-    const LOG_PREFIX = '[web-digest]';
+    const LOG_PREFIX = '[summarize-the-web]';
     function log(...args) { if (!CFG.DEBUG) return; console.log(LOG_PREFIX, ...args); }
 
     // API token usage tracking
@@ -345,7 +345,7 @@
         // Check cache first
         const cached = cacheGet(text, mode);
         if (cached) {
-            log(`Using cached digest for ${mode} mode`);
+            log(`Using cached summary for ${mode} mode`);
             return cached.result;
         }
 
@@ -520,7 +520,7 @@
         try {
             const textData = getTextToDigest();
             if (!textData) {
-                openInfo('No text found to digest. Try selecting text or visit an article page.');
+                openInfo('No text found to summarize. Try selecting text or visit an article page.');
                 return;
             }
 
@@ -551,9 +551,9 @@
             showSummaryOverlay(result, mode, textData.container);
 
             updateOverlayStatus('digested', mode);
-            log(`Applied ${mode} digest`);
+            log(`Applied ${mode} summary`);
         } catch (err) {
-            log('Summary digest error:', err);
+            log('Summary error:', err);
             friendlyApiError(err);
             updateOverlayStatus('ready');
         }
@@ -1035,6 +1035,7 @@
 
         slideHandle.addEventListener('click', toggleSlide);
         dragHandle.addEventListener('mousedown', startDrag);
+        dragHandle.addEventListener('touchstart', startDrag);
 
         digestBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1131,11 +1132,15 @@
         overlay.classList.add('dragging');
 
         const rect = overlay.getBoundingClientRect();
-        dragOffset.x = e.clientX - rect.left;
-        dragOffset.y = e.clientY - rect.top;
+        const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
+        const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+        dragOffset.x = clientX - rect.left;
+        dragOffset.y = clientY - rect.top;
 
         document.addEventListener('mousemove', onDrag);
         document.addEventListener('mouseup', stopDrag);
+        document.addEventListener('touchmove', onDrag, { passive: false });
+        document.addEventListener('touchend', stopDrag);
 
         e.preventDefault();
     }
@@ -1143,8 +1148,11 @@
     function onDrag(e) {
         if (!isDragging) return;
 
-        let newX = e.clientX - dragOffset.x;
-        let newY = e.clientY - dragOffset.y;
+        const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
+        const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+
+        let newX = clientX - dragOffset.x;
+        let newY = clientY - dragOffset.y;
 
         // Constrain to viewport
         const maxX = window.innerWidth - overlay.offsetWidth;
@@ -1156,6 +1164,8 @@
         overlay.style.top = `${newY}px`;
 
         OVERLAY_POS = { x: newX, y: newY };
+
+        e.preventDefault();
     }
 
     function stopDrag() {
@@ -1166,6 +1176,8 @@
 
         document.removeEventListener('mousemove', onDrag);
         document.removeEventListener('mouseup', stopDrag);
+        document.removeEventListener('touchmove', onDrag);
+        document.removeEventListener('touchend', stopDrag);
 
         storage.set(OVERLAY_POS_KEY, JSON.stringify(OVERLAY_POS));
     }
@@ -1828,7 +1840,7 @@
         setTimeout(() => {
             const textData = getTextToDigest();
             if (textData && textData.source === 'article') {
-                log('Auto-simplify enabled, applying summary large digest...');
+                log('Auto-simplify enabled, applying large summary...');
                 applySummaryDigest('large');
             }
         }, 1000);
