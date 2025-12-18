@@ -2,17 +2,20 @@
 
 A userscript that summarizes and simplifies web articles using the OpenAI API. Get quick summaries of any article or selected text directly in your browser.
 
+> **Latest Version**: 1.2.0 | [See What's New](CHANGELOG.md)
+
 ## Features
 
 - **Two Summary Sizes**: Choose between Large (50%) or Small (20%) summaries
 - **Works with Articles & Selected Text**: Summarize entire articles or just highlight specific text
+- **AI Model Selection**: Choose from 5 different OpenAI models (GPT-5, GPT-4.1) with different pricing and quality levels
 - **Caching**: Previously generated summaries are cached to save API costs
 - **Customizable Prompts**: Modify the AI prompts to suit your needs
 - **Simplification Styles**: Choose from Conservative, Balanced, or Aggressive simplification
 - **Domain Controls**: Enable/disable on specific websites using allowlist or denylist
 - **Auto-Simplify**: Optionally auto-summarize articles on page load
 - **Usage Statistics**: Track API token usage and estimated costs
-- **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile
+- **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile, with full touch support for dragging
 
 ## Installation
 
@@ -32,9 +35,10 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 ### Quick Start
 
 1. Navigate to any article page
-2. Click the **Summarize** panel that appears on the right side of the screen
-3. Choose **Large** (50% length) or **Small** (20% length) summary
-4. View your summary in the overlay that appears
+2. **Enable** the script for the current domain from the menu
+3. Click the **Summarize** panel that appears on the right side of the screen
+4. Choose **Large** (50% length) or **Small** (20% length) summary
+5. View your summary in the overlay that appears
 
 ### Summarizing Selected Text
 
@@ -46,7 +50,7 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 
 - **Large**: Creates a summary at ~50% of the original length
 - **Small**: Creates a concise summary at ~20% of the original length
-- **Restore**: Closes the summary overlay
+- Click the **X** button in the summary overlay to close it
 
 ### Userscript Menu Options
 
@@ -54,6 +58,7 @@ Access these via your userscript manager's menu:
 
 **Configuration**
 - Set / Validate OpenAI API key
+- AI model selection (choose from 5 models with different pricing/quality)
 - Configure custom prompts
 - Simplification style (Conservative/Balanced/Aggressive)
 
@@ -93,9 +98,24 @@ You can customize the AI prompts for both Large and Small summaries via the user
 - **Balanced**: Good balance of clarity and faithfulness (recommended)
 - **Aggressive**: Maximum simplification for easier reading
 
+### AI Model Selection
+
+Choose from 5 different OpenAI models based on your needs and budget:
+
+**Regular Tier:**
+- **GPT-5 Nano** (Recommended) - $0.05/$0.40 per 1M tokens - Ultra-affordable, best value
+- **GPT-5 Mini** - $0.25/$2.00 per 1M tokens - Better quality, still affordable
+
+**Priority Tier (Faster Processing):**
+- **GPT-4.1 Nano Priority** - $0.20/$0.80 per 1M tokens - Fast + cheaper than regular GPT-5 Mini
+- **GPT-5 Mini Priority** - $0.45/$3.60 per 1M tokens - Better quality + faster
+- **GPT-5.2 Priority** - $2.50/$20.00 per 1M tokens - Premium quality + fastest
+
+Access model selection via the userscript menu. Changing models clears the cache and reloads the page.
+
 ## API Usage & Costs
 
-The script uses OpenAI's `gpt-4o-mini` model. You can view your usage statistics including:
+The script defaults to OpenAI's `gpt-5-nano` model (ultra-affordable at $0.05/$0.40 per 1M tokens), but you can select from 5 different models. You can view your usage statistics including:
 - Total API calls
 - Token usage (input/output)
 - Estimated cost based on current pricing

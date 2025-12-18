@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Modified from Neutralize Headlines by Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      1.0.0
+// @version      1.2.0
 // @description  Summarize and simplify web articles using OpenAI API with customizable digest sizes
 // @match        *://*/*
 // @exclude      about:*
@@ -28,15 +28,68 @@
 
     // ───────────────────────── CONFIG ─────────────────────────
     const CFG = {
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         temperature: 0.2,
         DEBUG: false,
+    };
+
+    // Available models with pricing
+    // To add new models: Add entry here with unique ID, API model name, description, and pricing
+    // Pricing source: https://openai.com/api/pricing/ (as of 2025-12-18)
+    // Priority models use service_tier=priority parameter for faster processing
+    // The key is a unique ID for our UI, apiModel is the actual OpenAI model name
+    const MODEL_OPTIONS = {
+        'gpt-5-nano': {
+            name: 'GPT-5 Nano',
+            apiModel: 'gpt-5-nano',
+            description: 'Ultra-affordable latest generation - Best value for most articles',
+            inputPer1M: 0.05,
+            outputPer1M: 0.40,
+            recommended: true,
+            priority: false
+        },
+        'gpt-5-mini': {
+            name: 'GPT-5 Mini',
+            apiModel: 'gpt-5-mini',
+            description: 'Better quality, still very affordable',
+            inputPer1M: 0.25,
+            outputPer1M: 2.00,
+            recommended: false,
+            priority: false
+        },
+        'gpt-4.1-nano-priority': {
+            name: 'GPT-4.1 Nano Priority',
+            apiModel: 'gpt-4.1-nano',
+            description: 'Faster processing - Cheaper than regular GPT-5 Mini',
+            inputPer1M: 0.20,
+            outputPer1M: 0.80,
+            recommended: false,
+            priority: true
+        },
+        'gpt-5-mini-priority': {
+            name: 'GPT-5 Mini Priority',
+            apiModel: 'gpt-5-mini',
+            description: 'Better quality + faster processing',
+            inputPer1M: 0.45,
+            outputPer1M: 3.60,
+            recommended: false,
+            priority: true
+        },
+        'gpt-5.2-priority': {
+            name: 'GPT-5.2 Priority',
+            apiModel: 'gpt-5.2',
+            description: 'Premium quality + fastest processing (most expensive)',
+            inputPer1M: 2.50,
+            outputPer1M: 20.00,
+            recommended: false,
+            priority: true
+        }
     };
 
     const UI_ATTR = 'data-digest-ui';
     const HOST = location.hostname;
 
-    const LOG_PREFIX = '[web-digest]';
+    const LOG_PREFIX = '[summarize-the-web]';
     function log(...args) { if (!CFG.DEBUG) return; console.log(LOG_PREFIX, ...args); }
 
     // API token usage tracking
@@ -46,10 +99,10 @@
 
     // API Pricing configuration
     let PRICING = {
-        model: 'gpt-4o-mini',
-        inputPer1M: 0.15,
-        outputPer1M: 0.60,
-        lastUpdated: '2025-01-25',
+        model: 'gpt-5-nano',
+        inputPer1M: 0.05,
+        outputPer1M: 0.40,
+        lastUpdated: '2025-12-18',
         source: 'https://openai.com/api/pricing/'
     };
 
@@ -97,6 +150,7 @@
     const API_TOKENS_KEY = 'digest_api_tokens_v1';
     const PRICING_KEY = 'digest_pricing_v1';
     const CACHE_KEY = 'digest_cache_v1';
+    const MODEL_KEY = 'digest_model_v1';
 
     // Default prompts
     const DEFAULT_PROMPTS = {
@@ -171,6 +225,17 @@
     try {
         const stored = await storage.get(PRICING_KEY, '');
         if (stored) PRICING = JSON.parse(stored);
+    } catch {}
+
+    // Load saved model preference
+    try {
+        const stored = await storage.get(MODEL_KEY, '');
+        if (stored && MODEL_OPTIONS[stored]) {
+            CFG.model = stored;
+            PRICING.model = stored;
+            PRICING.inputPer1M = MODEL_OPTIONS[stored].inputPer1M;
+            PRICING.outputPer1M = MODEL_OPTIONS[stored].outputPer1M;
+        }
     } catch {}
 
     // ───────────────────────── DOMAIN MATCHING ─────────────────────────
@@ -345,20 +410,30 @@
         // Check cache first
         const cached = cacheGet(text, mode);
         if (cached) {
-            log(`Using cached digest for ${mode} mode`);
+            log(`Using cached summary for ${mode} mode`);
             return cached.result;
         }
 
         const safeInput = text.replace(/[\u2028\u2029]/g, ' ');
         const prompt = CUSTOM_PROMPTS[mode] || DEFAULT_PROMPTS[mode];
 
-        const body = JSON.stringify({
-            model: CFG.model,
+        // Get the actual API model name (not the UI identifier)
+        const apiModelName = MODEL_OPTIONS[CFG.model]?.apiModel || CFG.model;
+
+        const requestBody = {
+            model: apiModelName,
             temperature: SIMPLIFICATION_TEMPERATURE,
             max_output_tokens: mode.includes('small') ? 2000 : 4000,
             instructions: prompt,
             input: safeInput
-        });
+        };
+
+        // Add service_tier for priority models
+        if (MODEL_OPTIONS[CFG.model]?.priority) {
+            requestBody.service_tier = 'priority';
+        }
+
+        const body = JSON.stringify(requestBody);
 
         const resText = await xhrPost('https://api.openai.com/v1/responses', body, apiHeaders(KEY));
         const payload = JSON.parse(resText);
@@ -520,7 +595,7 @@
         try {
             const textData = getTextToDigest();
             if (!textData) {
-                openInfo('No text found to digest. Try selecting text or visit an article page.');
+                openInfo('No text found to summarize. Try selecting text or visit an article page.');
                 return;
             }
 
@@ -551,9 +626,9 @@
             showSummaryOverlay(result, mode, textData.container);
 
             updateOverlayStatus('digested', mode);
-            log(`Applied ${mode} digest`);
+            log(`Applied ${mode} summary`);
         } catch (err) {
-            log('Summary digest error:', err);
+            log('Summary error:', err);
             friendlyApiError(err);
             updateOverlayStatus('ready');
         }
@@ -807,15 +882,6 @@
         color: #fff !important;
         font-weight: 600 !important;
       }
-      .digest-restore-btn {
-        width: 100% !important;
-        background: #764ba2 !important;
-        color: #fff !important;
-        border-color: #764ba2 !important;
-      }
-      .digest-restore-btn:hover {
-        background: #5a3780 !important;
-      }
       .digest-status {
         font-size: 10px !important;
         color: #666 !important;
@@ -1020,7 +1086,6 @@
           <button class="digest-btn" data-size="large">Large</button>
           <button class="digest-btn" data-size="small">Small</button>
         </div>
-        <button class="digest-btn digest-restore-btn">Restore</button>
         <div class="digest-status">Ready</div>
       </div>
     `;
@@ -1031,10 +1096,10 @@
         const slideHandle = overlay.querySelector('.digest-slide-handle');
         const dragHandle = overlay.querySelector('.digest-handle');
         const digestBtns = overlay.querySelectorAll('.digest-btn[data-size]');
-        const restoreBtn = overlay.querySelector('.digest-restore-btn');
 
         slideHandle.addEventListener('click', toggleSlide);
         dragHandle.addEventListener('mousedown', startDrag);
+        dragHandle.addEventListener('touchstart', startDrag);
 
         digestBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1042,8 +1107,6 @@
                 applySummaryDigest(size);
             });
         });
-
-        restoreBtn.addEventListener('click', restoreOriginal);
 
         // Update initial state
         updateOverlayStatus('ready');
@@ -1131,11 +1194,15 @@
         overlay.classList.add('dragging');
 
         const rect = overlay.getBoundingClientRect();
-        dragOffset.x = e.clientX - rect.left;
-        dragOffset.y = e.clientY - rect.top;
+        const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
+        const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+        dragOffset.x = clientX - rect.left;
+        dragOffset.y = clientY - rect.top;
 
         document.addEventListener('mousemove', onDrag);
         document.addEventListener('mouseup', stopDrag);
+        document.addEventListener('touchmove', onDrag, { passive: false });
+        document.addEventListener('touchend', stopDrag);
 
         e.preventDefault();
     }
@@ -1143,8 +1210,11 @@
     function onDrag(e) {
         if (!isDragging) return;
 
-        let newX = e.clientX - dragOffset.x;
-        let newY = e.clientY - dragOffset.y;
+        const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
+        const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+
+        let newX = clientX - dragOffset.x;
+        let newY = clientY - dragOffset.y;
 
         // Constrain to viewport
         const maxX = window.innerWidth - overlay.offsetWidth;
@@ -1156,6 +1226,8 @@
         overlay.style.top = `${newY}px`;
 
         OVERLAY_POS = { x: newX, y: newY };
+
+        e.preventDefault();
     }
 
     function stopDrag() {
@@ -1166,6 +1238,8 @@
 
         document.removeEventListener('mousemove', onDrag);
         document.removeEventListener('mouseup', stopDrag);
+        document.removeEventListener('touchmove', onDrag);
+        document.removeEventListener('touchend', stopDrag);
 
         storage.set(OVERLAY_POS_KEY, JSON.stringify(OVERLAY_POS));
     }
@@ -1175,7 +1249,6 @@
 
         const statusEl = overlay.querySelector('.digest-status');
         const digestBtns = overlay.querySelectorAll('.digest-btn[data-size]');
-        const restoreBtn = overlay.querySelector('.digest-restore-btn');
 
         // Remove active class from all digest buttons
         digestBtns.forEach(btn => btn.classList.remove('active'));
@@ -1183,19 +1256,16 @@
         if (status === 'ready') {
             statusEl.textContent = 'Ready';
             digestBtns.forEach(btn => btn.disabled = false);
-            restoreBtn.disabled = true;
         } else if (status === 'processing') {
             const size = mode ? mode.split('_')[1] : '';
             const sizeLabel = size === 'large' ? 'Large' : 'Small';
             statusEl.textContent = fromCache ? `Applying ${sizeLabel}...` : `Processing ${sizeLabel}...`;
             digestBtns.forEach(btn => btn.disabled = true);
-            restoreBtn.disabled = true;
         } else if (status === 'digested') {
             const size = mode ? mode.split('_')[1] : '';
             const sizeLabel = size === 'large' ? 'Large' : 'Small';
             statusEl.textContent = `${sizeLabel} summary applied`;
             digestBtns.forEach(btn => btn.disabled = false);
-            restoreBtn.disabled = false;
 
             // Highlight active button
             const activeBtn = overlay.querySelector(`[data-size="${size}"]`);
@@ -1513,6 +1583,112 @@
         wrap.focus();
     }
 
+    function openModelSelectionDialog() {
+        const host = document.createElement('div');
+        host.setAttribute(UI_ATTR, '');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const style = document.createElement('style');
+        style.textContent = `
+      .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
+            display:flex;align-items:center;justify-content:center}
+      .modal{background:#fff;max-width:600px;width:90%;border-radius:12px;
+             box-shadow:0 10px 40px rgba(0,0,0,.3);padding:24px;box-sizing:border-box}
+      h3{margin:0 0 8px;font:600 18px/1.2 system-ui,sans-serif;color:#1a1a1a}
+      .subtitle{margin:0 0 20px;font:13px/1.4 system-ui,sans-serif;color:#666}
+      .option{padding:16px;margin:10px 0;border:2px solid #e0e0e0;border-radius:8px;
+              cursor:pointer;transition:all 0.2s;position:relative}
+      .option:hover{border-color:#667eea;background:#f8f9ff}
+      .option.selected{border-color:#667eea;background:#667eea;color:#fff}
+      .option-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:8px}
+      .option-title{font:600 16px/1.2 system-ui,sans-serif}
+      .option-badge{font:600 10px/1.2 system-ui,sans-serif;padding:4px 8px;
+                    border-radius:4px;background:#34a853;color:#fff;text-transform:uppercase}
+      .option.selected .option-badge{background:rgba(255,255,255,0.3)}
+      .option-desc{font:13px/1.5 system-ui,sans-serif;opacity:0.85;margin-bottom:8px}
+      .option-pricing{font:12px/1.3 system-ui,sans-serif;opacity:0.7;font-family:ui-monospace,monospace}
+      .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+      .btn{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;
+           font:600 14px system-ui,sans-serif}
+      .btn-save{background:#667eea;color:#fff}
+      .btn-save:hover{background:#5568d3}
+      .btn-cancel{background:#e0e0e0;color:#333}
+      .btn-cancel:hover{background:#d0d0d0}
+    `;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'wrap';
+
+        const optionsHtml = Object.keys(MODEL_OPTIONS).map(modelId => {
+            const model = MODEL_OPTIONS[modelId];
+            const isSelected = modelId === CFG.model;
+            const badge = model.recommended ? '<span class="option-badge">Recommended</span>' : '';
+            return `
+        <div class="option ${isSelected ? 'selected' : ''}" data-model="${modelId}">
+          <div class="option-header">
+            <div class="option-title">${model.name}</div>
+            ${badge}
+          </div>
+          <div class="option-desc">${model.description}</div>
+          <div class="option-pricing">$${model.inputPer1M.toFixed(2)}/1M input • $${model.outputPer1M.toFixed(2)}/1M output</div>
+        </div>
+      `;
+        }).join('');
+
+        wrap.innerHTML = `
+      <div class="modal">
+        <h3>AI Model Selection</h3>
+        <p class="subtitle">Choose the OpenAI model for summarization. Higher-tier models provide better quality but cost more.</p>
+        ${optionsHtml}
+        <div class="actions">
+          <button class="btn btn-cancel">Cancel</button>
+          <button class="btn btn-save">Save & Reload</button>
+        </div>
+      </div>
+    `;
+        shadow.append(style, wrap);
+        document.body.appendChild(host);
+
+        let selectedModel = CFG.model;
+
+        const options = shadow.querySelectorAll('.option');
+        options.forEach(opt => {
+            opt.addEventListener('click', () => {
+                options.forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                selectedModel = opt.dataset.model;
+            });
+        });
+
+        const btnSave = shadow.querySelector('.btn-save');
+        const btnCancel = shadow.querySelector('.btn-cancel');
+
+        const close = () => host.remove();
+
+        btnSave.addEventListener('click', async () => {
+            if (!MODEL_OPTIONS[selectedModel]) return;
+
+            CFG.model = selectedModel;
+            PRICING.model = selectedModel;
+            PRICING.inputPer1M = MODEL_OPTIONS[selectedModel].inputPer1M;
+            PRICING.outputPer1M = MODEL_OPTIONS[selectedModel].outputPer1M;
+
+            await storage.set(MODEL_KEY, selectedModel);
+            await storage.set(PRICING_KEY, JSON.stringify(PRICING));
+            await cacheClear(); // Clear cache when model changes
+
+            btnSave.textContent = 'Saved! Reloading...';
+            btnSave.style.background = '#34a853';
+            setTimeout(() => location.reload(), 800);
+        });
+
+        btnCancel.addEventListener('click', close);
+        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+
+        wrap.setAttribute('tabindex', '-1');
+        wrap.focus();
+    }
+
     function openDomainEditor(mode) {
         const host = document.createElement('div');
         host.setAttribute(UI_ATTR, '');
@@ -1669,10 +1845,10 @@
         </div>
 
         <div class="section">
-          <h4>Pricing Configuration</h4>
+          <h4>Current Model Configuration</h4>
           <div class="stat-row">
             <span class="stat-label">Model</span>
-            <span class="stat-value">${PRICING.model}</span>
+            <span class="stat-value">${MODEL_OPTIONS[CFG.model]?.name || CFG.model} (${PRICING.model})</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Input Cost</span>
@@ -1683,7 +1859,7 @@
             <span class="stat-value">$${PRICING.outputPer1M.toFixed(2)} / 1M tokens</span>
           </div>
           <div class="stat-row">
-            <span class="stat-label">Last Updated</span>
+            <span class="stat-label">Pricing Updated</span>
             <span class="stat-value">${PRICING.lastUpdated}</span>
           </div>
         </div>
@@ -1745,6 +1921,7 @@
     // ───────────────────────── MENU COMMANDS ─────────────────────────
     GM_registerMenuCommand?.('--- Configuration ---', () => {});
     GM_registerMenuCommand?.('Set / Validate OpenAI API key', () => openKeyDialog());
+    GM_registerMenuCommand?.(`AI model (${MODEL_OPTIONS[CFG.model]?.name || CFG.model})`, openModelSelectionDialog);
     GM_registerMenuCommand?.('Configure custom prompts', openCustomPromptDialog);
     GM_registerMenuCommand?.(`Simplification style (${SIMPLIFICATION_LEVEL})`, openSimplificationStyleDialog);
 
@@ -1828,7 +2005,7 @@
         setTimeout(() => {
             const textData = getTextToDigest();
             if (textData && textData.source === 'article') {
-                log('Auto-simplify enabled, applying summary large digest...');
+                log('Auto-simplify enabled, applying large summary...');
                 applySummaryDigest('large');
             }
         }, 1000);
