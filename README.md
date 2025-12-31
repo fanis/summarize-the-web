@@ -2,13 +2,15 @@
 
 A userscript that summarizes and simplifies web articles using the OpenAI API. Get quick summaries of any article or selected text directly in your browser.
 
-> **Latest Version**: 1.2.0 | [See What's New](CHANGELOG.md)
+> **Latest Version**: 1.3.0 | [See What's New](CHANGELOG.md)
 
 ## Features
 
 - **Two Summary Sizes**: Choose between Large (50%) or Small (20%) summaries
 - **Works with Articles & Selected Text**: Summarize entire articles or just highlight specific text
 - **AI Model Selection**: Choose from 5 different OpenAI models (GPT-5, GPT-4.1) with different pricing and quality levels
+- **Element Inspection Mode**: Diagnostic tool to troubleshoot why elements are/aren't being detected
+- **Configurable Selectors**: Global + per-domain CSS selector configuration for article containers
 - **Caching**: Previously generated summaries are cached to save API costs
 - **Customizable Prompts**: Modify the AI prompts to suit your needs
 - **Simplification Styles**: Choose from Conservative, Balanced, or Aggressive simplification
@@ -17,6 +19,8 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 - **Usage Statistics**: Track API token usage and estimated costs
 - **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile, with full touch support for dragging
 
+**New in 1.3.0:** Complete architectural refactoring with modular ES6 code and build system using Rollup. Element Inspection Mode for troubleshooting article detection. Configurable global and per-domain article container selectors.
+
 ## Installation
 
 1. Install a userscript manager:
@@ -24,11 +28,42 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
    - [Violentmonkey](https://violentmonkey.github.io/) (Chrome, Firefox, Edge)
    - [Greasemonkey](https://www.greasespot.net/) (Firefox)
 
-2. Install the userscript from the `src/summarize-the-web.js` file
+2. Install the userscript from the `dist/summarize-the-web.js` file
 
 3. Get an OpenAI API key from [OpenAI Platform](https://platform.openai.com/api-keys)
 
 4. Configure your API key via the userscript menu
+
+## Development
+
+This project uses a modular ES6 architecture with a build system for easy development.
+
+### Building from Source
+
+```bash
+# Install dependencies
+npm install
+
+# Build the userscript
+npm run build
+
+# Output: dist/summarize-the-web.js
+```
+
+**Development workflow:**
+```bash
+npm run dev          # Watch mode - auto-rebuild on changes
+npm run build        # Single build
+```
+
+The source code is organized into modules:
+- `src/main.js` - Application entry point
+- `src/modules/` - Individual feature modules
+- `src/banner.txt` - Userscript metadata header
+
+After building, install `dist/summarize-the-web.js` in your userscript manager.
+
+For detailed build documentation, see [BUILD.md](BUILD.md).
 
 ## Usage
 

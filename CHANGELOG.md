@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-12-31
+
+### Changed
+- **Complete refactoring to modular ES6 architecture**
+  - Split monolithic file into 11 focused modules for better maintainability
+  - Entry point (`src/main.js`) orchestrates module imports and bootstrapping
+  - Modules: api.js, cache.js, config.js, extraction.js, inspection.js, overlay.js, selectors.js, settings.js, storage.js, utils.js
+- **Build system with Rollup**
+  - Bundler creates single IIFE userscript from ES6 modules
+  - Watch mode for development (`npm run dev`)
+  - Output: `dist/summarize-the-web.js`
+
+### Added
+- **Element Inspection Mode** - Click "Inspect element" in menu, then click any element to analyze
+  - Shows element details (tag, classes, ID, CSS selector)
+  - Shows matching global/local inclusion and exclusion selectors
+  - Smart action buttons: Add/Remove for inclusions and exclusions
+  - Buttons intelligently enable/disable based on current match state
+- **Configurable article container selectors**
+  - Edit global container selectors (all domains)
+  - Edit domain-specific container selectors
+  - Edit global exclusions (elements and ancestors)
+  - Edit domain-specific exclusions
+
+### Fixed
+- Script now only runs in top-level windows (not in iframes) to prevent multiple badges
+
+
 ## [1.2.0] - 2025-12-18
 
 ### Added
