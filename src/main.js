@@ -106,10 +106,47 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     let DOMAIN_DISABLED = computeDomainDisabled(HOST);
     log('domain check:', HOST, 'mode=', DOMAINS_MODE, 'disabled=', DOMAIN_DISABLED);
 
-    if (DOMAIN_DISABLED) {
-        log('Domain disabled, exiting:', HOST);
-        return;
-    }
+    // Register Domain Controls menu BEFORE early return so users can enable disabled domains
+    GM_registerMenuCommand?.('--- Domain Controls ---', () => {});
+
+    GM_registerMenuCommand?.(
+        DOMAINS_MODE === 'allow' ? 'Domain mode: Allowlist only' : 'Domain mode: All domains with Denylist',
+        async () => {
+            DOMAINS_MODE = (DOMAINS_MODE === 'allow') ? 'deny' : 'allow';
+            await storage.set(STORAGE_KEYS.DOMAINS_MODE, DOMAINS_MODE);
+            location.reload();
+        }
+    );
+
+    GM_registerMenuCommand?.(
+        computeDomainDisabled(HOST) ? `Current page: DISABLED (click to enable)` : `Current page: ENABLED (click to disable)`,
+        async () => {
+            if (DOMAINS_MODE === 'allow') {
+                if (listMatchesHost(DOMAIN_ALLOW, HOST)) {
+                    DOMAIN_ALLOW = DOMAIN_ALLOW.filter(p => !domainPatternToRegex(p)?.test(HOST));
+                } else {
+                    DOMAIN_ALLOW.push(HOST);
+                }
+                await storage.set(STORAGE_KEYS.DOMAINS_ALLOW, JSON.stringify(DOMAIN_ALLOW));
+            } else {
+                if (computeDomainDisabled(HOST)) {
+                    DOMAIN_DENY = DOMAIN_DENY.filter(p => !domainPatternToRegex(p)?.test(HOST));
+                } else {
+                    if (!DOMAIN_DENY.includes(HOST)) DOMAIN_DENY.push(HOST);
+                }
+                await storage.set(STORAGE_KEYS.DOMAINS_DENY, JSON.stringify(DOMAIN_DENY));
+            }
+            location.reload();
+        }
+    );
+
+    GM_registerMenuCommand?.('Edit domain allowlist', () => {
+        openDomainEditor(storage, 'allow', DOMAIN_ALLOW, DOMAIN_DENY);
+    });
+
+    GM_registerMenuCommand?.('Edit domain denylist', () => {
+        openDomainEditor(storage, 'deny', DOMAIN_ALLOW, DOMAIN_DENY);
+    });
 
     // Original article content (for restore functionality)
     let originalContent = null;
@@ -339,48 +376,6 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         });
     });
 
-    // Domain controls
-    GM_registerMenuCommand?.('--- Domain Controls ---', () => {});
-
-    GM_registerMenuCommand?.(
-        DOMAINS_MODE === 'allow' ? 'Domain mode: Allowlist only' : 'Domain mode: All domains with Denylist',
-        async () => {
-            DOMAINS_MODE = (DOMAINS_MODE === 'allow') ? 'deny' : 'allow';
-            await storage.set(STORAGE_KEYS.DOMAINS_MODE, DOMAINS_MODE);
-            location.reload();
-        }
-    );
-
-    GM_registerMenuCommand?.(
-        computeDomainDisabled(HOST) ? `Current page: DISABLED (click to enable)` : `Current page: ENABLED (click to disable)`,
-        async () => {
-            if (DOMAINS_MODE === 'allow') {
-                if (listMatchesHost(DOMAIN_ALLOW, HOST)) {
-                    DOMAIN_ALLOW = DOMAIN_ALLOW.filter(p => !domainPatternToRegex(p)?.test(HOST));
-                } else {
-                    DOMAIN_ALLOW.push(HOST);
-                }
-                await storage.set(STORAGE_KEYS.DOMAINS_ALLOW, JSON.stringify(DOMAIN_ALLOW));
-            } else {
-                if (computeDomainDisabled(HOST)) {
-                    DOMAIN_DENY = DOMAIN_DENY.filter(p => !domainPatternToRegex(p)?.test(HOST));
-                } else {
-                    if (!DOMAIN_DENY.includes(HOST)) DOMAIN_DENY.push(HOST);
-                }
-                await storage.set(STORAGE_KEYS.DOMAINS_DENY, JSON.stringify(DOMAIN_DENY));
-            }
-            location.reload();
-        }
-    );
-
-    GM_registerMenuCommand?.('Edit domain allowlist', () => {
-        openDomainEditor(storage, 'allow', DOMAIN_ALLOW, DOMAIN_DENY);
-    });
-
-    GM_registerMenuCommand?.('Edit domain denylist', () => {
-        openDomainEditor(storage, 'deny', DOMAIN_ALLOW, DOMAIN_DENY);
-    });
-
     // Toggles
     GM_registerMenuCommand?.('--- Toggles ---', () => {});
 
@@ -433,6 +428,11 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     if (!hasApiKey) {
         log('No API key configured. Script inactive. Set API key via menu.');
+        return;
+    }
+
+    if (DOMAIN_DISABLED) {
+        log('Domain disabled, skipping overlay:', HOST);
         return;
     }
 

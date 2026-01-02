@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-01-02
+
+### Fixed
+- Menu now appears on disabled domains, allowing users to enable the script or change settings
+- Improved article container selector matching
+
 ## [1.3.0] - 2025-12-31
 
 ### Changed

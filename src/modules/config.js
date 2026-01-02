@@ -107,7 +107,7 @@ export const DEFAULT_SELECTORS = [
     '.post-content',
     '.entry-content',
     '[class*="article-content"]',
-    '[class*="post-body"]',
+    ':is(div, section, article)[class*="post-body"]',
     // Greek news sites
     '[class*="articleContainer"] .cnt',
     '[class*="articleContainer"]',
