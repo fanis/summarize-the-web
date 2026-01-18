@@ -2,7 +2,7 @@
  * Settings dialogs and management for Summarize The Web
  */
 
-import { UI_ATTR, STORAGE_KEYS, MODEL_OPTIONS, SIMPLIFICATION_LEVELS, SIMPLIFICATION_ORDER, DEFAULT_PROMPTS } from './config.js';
+import { UI_ATTR, STORAGE_KEYS, MODEL_OPTIONS, SIMPLIFICATION_LEVELS, DEFAULT_PROMPTS } from './config.js';
 import { parseLines, escapeHtml } from './utils.js';
 import { xhrGet, API_TOKENS, PRICING, calculateApiCost } from './api.js';
 
@@ -310,7 +310,7 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
 
-    const optionsHtml = SIMPLIFICATION_ORDER.map(level => `
+    const optionsHtml = SIMPLIFICATION_LEVELS.map(level => `
         <div class="option ${level === currentLevel ? 'selected' : ''}" data-level="${level}">
             <div class="option-title">${level}</div>
             <div class="option-desc">${descriptions[level]}</div>
@@ -348,7 +348,7 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
     const close = () => host.remove();
 
     btnSave.addEventListener('click', async () => {
-        if (SIMPLIFICATION_LEVELS[selectedLevel] === undefined) return;
+        if (!SIMPLIFICATION_LEVELS.includes(selectedLevel)) return;
         await setSimplification(selectedLevel);
         btnSave.textContent = 'Saved!';
         btnSave.style.background = '#34a853';

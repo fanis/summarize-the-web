@@ -76,11 +76,12 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     let SIMPLIFICATION_LEVEL = 'Balanced';
     try {
         const v = await storage.get(STORAGE_KEYS.SIMPLIFICATION_STRENGTH, '');
-        if (v && SIMPLIFICATION_LEVELS[v] !== undefined) {
+        log('Loaded simplification style from storage:', v, 'valid:', SIMPLIFICATION_LEVELS.includes(v));
+        if (v && SIMPLIFICATION_LEVELS.includes(v)) {
             SIMPLIFICATION_LEVEL = v;
-            CFG.temperature = SIMPLIFICATION_LEVELS[v];
         }
     } catch {}
+    log('Using simplification level:', SIMPLIFICATION_LEVEL);
 
     // Overlay state
     let OVERLAY_COLLAPSED = { value: false };
@@ -182,7 +183,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
                 text,
                 mode,
                 prompt,
-                CFG.temperature,
+                SIMPLIFICATION_LEVEL,
                 (t, m) => cache.get(t, m),
                 async (t, m, r) => await cache.set(t, m, r),
                 (msg) => openKeyDialog(storage, msg, apiKeyDialogShown),
@@ -221,11 +222,11 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     // Settings functions
     async function setSimplification(level) {
-        if (SIMPLIFICATION_LEVELS[level] === undefined) return;
+        if (!SIMPLIFICATION_LEVELS.includes(level)) return;
         SIMPLIFICATION_LEVEL = level;
-        CFG.temperature = SIMPLIFICATION_LEVELS[level];
         await storage.set(STORAGE_KEYS.SIMPLIFICATION_STRENGTH, level);
         await cache.clear();
+        location.reload();
     }
 
     async function setModel(modelId) {

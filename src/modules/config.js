@@ -4,7 +4,6 @@
 
 export const CFG = {
     model: 'gpt-5-nano',
-    temperature: 0.2,
     DEBUG: false,
 };
 
@@ -91,13 +90,15 @@ export const DEFAULT_PROMPTS = {
     summary_small: 'You will receive INPUT as article text. Create a concise summary at approximately 20% of the original length while staying in the SAME language as input. Focus on the most important points and key facts. CRITICAL: Do NOT change facts, numbers, names, or core meaning. Preserve important quotes, statistics, and proper nouns exactly as they appear. Condense the content aggressively to achieve the 20% length target while maintaining readability. Return ONLY the summary text without any formatting, code blocks, or JSON.'
 };
 
-// Simplification style levels (controls how aggressively language is simplified)
-export const SIMPLIFICATION_LEVELS = {
-    'Conservative': 0.1,
-    'Balanced': 0.2,
-    'Aggressive': 0.4
+// Simplification style levels
+export const SIMPLIFICATION_LEVELS = ['Conservative', 'Balanced', 'Aggressive'];
+
+// Style instructions appended to prompts
+export const STYLE_INSTRUCTIONS = {
+    'Conservative': ' Minimize rephrasing. Preserve original wording and sentence structure where possible.',
+    'Balanced': '',
+    'Aggressive': ' Maximize simplification. Use simpler vocabulary and shorter sentences.'
 };
-export const SIMPLIFICATION_ORDER = ['Conservative', 'Balanced', 'Aggressive'];
 
 // Default article container selectors (ordered by specificity)
 export const DEFAULT_SELECTORS = [
@@ -141,3 +142,9 @@ export const DEFAULT_PRICING = {
 // Cache settings
 export const CACHE_LIMIT = 50;
 export const CACHE_TRIM_TO = 30;
+
+// Max output tokens per summary mode
+export const MAX_OUTPUT_TOKENS = {
+    large: 4000,
+    small: 2000
+};

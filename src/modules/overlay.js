@@ -511,10 +511,6 @@ export function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPS
     const sizeLabel = mode.includes('large') ? 'Large' : 'Small';
     const isSelectedText = !container;
 
-    const footerButtons = isSelectedText
-        ? `<button class="digest-summary-close-btn">Close</button>`
-        : `<button class="digest-summary-restore">Restore Original Article</button>`;
-
     summaryOverlay.innerHTML = `
         <div class="digest-summary-container">
             <div class="digest-summary-header">
@@ -526,7 +522,7 @@ export function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPS
             </div>
             <div class="digest-summary-footer">
                 <div class="digest-summary-footer-text">Summarize The Web</div>
-                ${footerButtons}
+                <button class="digest-summary-close-btn">Close</button>
             </div>
         </div>
     `;
@@ -535,7 +531,6 @@ export function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPS
 
     const closeBtn = summaryOverlay.querySelector('.digest-summary-close');
     const closeBtnFooter = summaryOverlay.querySelector('.digest-summary-close-btn');
-    const restoreBtn = summaryOverlay.querySelector('.digest-summary-restore');
 
     const closeHandler = () => {
         removeSummaryOverlay();
@@ -547,7 +542,7 @@ export function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPS
         closeBtnFooter.addEventListener('click', removeSummaryOverlay);
     } else {
         closeBtn.addEventListener('click', closeHandler);
-        restoreBtn.addEventListener('click', closeHandler);
+        closeBtnFooter.addEventListener('click', closeHandler);
     }
 
     summaryOverlay.addEventListener('click', (e) => {

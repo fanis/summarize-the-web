@@ -2,7 +2,7 @@
  * OpenAI API functions for Summarize The Web
  */
 
-import { CFG, MODEL_OPTIONS, STORAGE_KEYS, DEFAULT_PRICING } from './config.js';
+import { CFG, MODEL_OPTIONS, STORAGE_KEYS, DEFAULT_PRICING, STYLE_INSTRUCTIONS, MAX_OUTPUT_TOKENS } from './config.js';
 import { log } from './utils.js';
 
 // API token usage tracking
@@ -188,7 +188,7 @@ export async function resetPricingToDefaults(storage) {
 /**
  * Call OpenAI API to digest text
  */
-export async function digestText(storage, text, mode, prompt, temperature, cacheGet, cacheSet, openKeyDialog, openInfo) {
+export async function digestText(storage, text, mode, prompt, styleLevel, cacheGet, cacheSet, openKeyDialog, openInfo) {
     const KEY = await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
     if (!KEY) {
         openKeyDialog('OpenAI API key missing.');
@@ -207,13 +207,21 @@ export async function digestText(storage, text, mode, prompt, temperature, cache
     // Get the actual API model name (not the UI identifier)
     const apiModelName = MODEL_OPTIONS[CFG.model]?.apiModel || CFG.model;
 
+    // Append style instructions to prompt
+    const styleInstruction = STYLE_INSTRUCTIONS[styleLevel] || '';
+    const fullPrompt = prompt + styleInstruction;
+
     const requestBody = {
         model: apiModelName,
-        temperature: temperature,
-        max_output_tokens: mode.includes('small') ? 2000 : 4000,
-        instructions: prompt,
+        max_output_tokens: mode.includes('small') ? MAX_OUTPUT_TOKENS.small : MAX_OUTPUT_TOKENS.large,
+        instructions: fullPrompt,
         input: safeInput
     };
+
+    // GPT-5 models are reasoning models - minimize reasoning for summarization
+    if (apiModelName.startsWith('gpt-5')) {
+        requestBody.reasoning = { effort: 'minimal' };
+    }
 
     // Add service_tier for priority models
     if (MODEL_OPTIONS[CFG.model]?.priority) {
@@ -224,13 +232,30 @@ export async function digestText(storage, text, mode, prompt, temperature, cache
 
     const resText = await xhrPost('https://api.openai.com/v1/responses', body, apiHeaders(KEY));
     const payload = JSON.parse(resText);
+    log('API response payload:', JSON.stringify(payload, null, 2));
 
     if (payload.usage) {
         updateApiTokens(storage, 'digest', payload.usage);
     }
 
+    // Check for incomplete response
+    if (payload.status === 'incomplete') {
+        const reason = payload.incomplete_details?.reason || 'unknown';
+        let errorMsg = 'API response incomplete';
+        if (reason === 'max_output_tokens') {
+            const reasoningTokens = payload.usage?.output_tokens_details?.reasoning_tokens || 0;
+            if (reasoningTokens > 0) {
+                errorMsg = `Model used all tokens on reasoning (${reasoningTokens} tokens). Try a different model or increase max_output_tokens in config.js`;
+            } else {
+                errorMsg = 'Response exceeded max_output_tokens limit. Try selecting less text or increase the limit in config.js';
+            }
+        }
+        throw Object.assign(new Error(errorMsg), { status: 400, isIncomplete: true });
+    }
+
     const outStr = extractOutputText(payload);
-    if (!outStr) throw Object.assign(new Error('No output from API'), { status: 400 });
+    log('Extracted output:', outStr ? outStr.substring(0, 100) + '...' : 'null');
+    if (!outStr) throw Object.assign(new Error('No output from API. The model returned an empty response.'), { status: 400 });
 
     // Strip markdown code fences if present
     const cleaned = outStr.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
@@ -258,9 +283,11 @@ export async function digestText(storage, text, mode, prompt, temperature, cache
  * Handle API errors with friendly messages
  */
 export function friendlyApiError(err, openKeyDialog, openInfo) {
+    console.log('API Error details:', err, 'Body:', err.body);
     const s = err?.status || 0;
     if (s === 401) { openKeyDialog('Unauthorized (401). Please enter a valid OpenAI key.'); return; }
     if (s === 429) { openInfo('Rate limited by API (429). Try again in a minute.'); return; }
-    if (s === 400) { openInfo('Bad request (400). The API could not parse the text. Try selecting less text.'); return; }
+    if (err.isIncomplete) { openInfo(err.message); return; }
+    if (s === 400) { openInfo(err.message || 'Bad request (400). The API could not parse the text. Try selecting less text.'); return; }
     openInfo(`Unknown error${s ? ' (' + s + ')' : ''}. Check your network or try again.`);
 }

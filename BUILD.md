@@ -100,15 +100,15 @@ npm install
 
 ### Development Mode
 
+Watch mode - auto-rebuild on changes:
 ```bash
-npm run dev          # Watch mode - auto-rebuild on changes
+npm run dev
 ```
 
 Or manually:
-
 ```bash
-npm run build        # Single build
-npm run build:watch  # Watch mode
+npm run build
+npm run build:watch
 ```
 
 ### Build Output
