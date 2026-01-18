@@ -52,8 +52,23 @@ npm run build
 
 **Development workflow:**
 ```bash
-npm run dev          # Watch mode - auto-rebuild on changes
-npm run build        # Single build
+# Watch mode - auto-rebuild on changes
+npm run dev
+
+# Single build
+npm run build
+```
+
+**Testing:**
+```bash
+# Run unit tests (vitest)
+npm test
+
+# Run E2E tests (Playwright)
+npm run test:e2e
+
+# Run all tests
+npm run test:all
 ```
 
 The source code is organized into modules:

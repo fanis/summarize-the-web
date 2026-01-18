@@ -6,11 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Install dependencies
-npm install          
+npm install
+
 # Build the userscript (outputs to dist/summarize-the-web.js)
-npm run build        
+npm run build
+
 # Watch mode - auto-rebuild on changes
-npm run dev          
+npm run dev
+
+# Run unit tests (vitest)
+npm test
+
+# Run E2E tests (Playwright)
+npm run test:e2e
+
+# Run all tests
+npm run test:all
 ```
 
 The build uses Rollup to bundle ES6 modules into a single IIFE userscript with the metadata header from `src/banner.txt`.
@@ -65,14 +76,20 @@ Before creating a new release:
 
 3. Update `README.md` if features changed
 
-4. Build: `npm run build`
+4. Run tests: `npm run test:all`
 
-5. Commit all changes
+5. Build: `npm run build`
 
-6. Create and push tag:
+6. Commit all changes
+
+7. Create and push tag:
    ```bash
    git tag X.Y.Z
    git push origin X.Y.Z
    ```
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) automatically creates a release with the changelog and attaches the built script.
+
+## Documentation Style
+
+When writing code blocks with commands that IDEs can detect and run, put comments on the line above the command, not inline. Inline comments break IDE click-to-run functionality.
