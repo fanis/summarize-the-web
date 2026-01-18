@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-18
+
+### Changed
+- Simplification style now uses prompt instructions instead of temperature parameter (GPT-5 models don't support temperature)
+- GPT-5 models now use `reasoning.effort: minimal` to prevent token exhaustion on reasoning
+
+### Added
+- `MAX_OUTPUT_TOKENS` config in `config.js` for easier customization
+- Better error messages for incomplete API responses (shows reasoning token usage)
+- GitHub Actions workflow for automatic releases on tag push
+
+### Fixed
+- GPT-5 model compatibility (removed unsupported temperature parameter)
+- Summary overlay close button null reference error
+- Simplification style menu now updates after changing selection
+- BUILD.md inline comments no longer break IDE click-to-run
+
 ## [1.3.1] - 2026-01-02
 
 ### Fixed

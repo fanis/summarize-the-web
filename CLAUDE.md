@@ -53,8 +53,26 @@ Core modules in `src/modules/`:
 4. If not cached, `api.js` calls OpenAI with configured model/prompt
 5. Result displayed in overlay, cached for future use
 
-## Version Updates
+## Release Checklist
 
-When bumping version, update both:
-- `package.json` version field
-- `src/banner.txt` @version metadata
+Before creating a new release:
+
+1. Update version in both files:
+   - `package.json` version field
+   - `src/banner.txt` @version metadata
+
+2. Update `CHANGELOG.md` with new version section
+
+3. Update `README.md` if features changed
+
+4. Build: `npm run build`
+
+5. Commit all changes
+
+6. Create and push tag:
+   ```bash
+   git tag X.Y.Z
+   git push origin X.Y.Z
+   ```
+
+The GitHub Actions workflow (`.github/workflows/release.yml`) automatically creates a release with the changelog and attaches the built script.
