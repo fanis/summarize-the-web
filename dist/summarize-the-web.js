@@ -2220,33 +2220,6 @@
 
 
     /**
-     * Check if element is excluded based on exclusion rules
-     */
-    function isExcluded(el, EXCLUDE) {
-        if (!el) return true;
-
-        // Check if element itself matches exclusion selectors
-        if (EXCLUDE.self) {
-            for (const sel of EXCLUDE.self) {
-                try {
-                    if (el.matches(sel)) return true;
-                } catch {}
-            }
-        }
-
-        // Check if any ancestor matches exclusion selectors
-        if (EXCLUDE.ancestors) {
-            for (const sel of EXCLUDE.ancestors) {
-                try {
-                    if (el.closest(sel)) return true;
-                } catch {}
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Get selected text from the page
      */
     function getSelectedText() {
@@ -2303,41 +2276,43 @@
             }
         }
 
-        // Extract text-containing elements (p, li, blockquote, figcaption, etc.)
-        const textSelectors = 'p, li, blockquote, figcaption, dd, dt';
-        const elements = Array.from(container.querySelectorAll(textSelectors));
+        // Clone container to avoid modifying the DOM
+        const clone = container.cloneNode(true);
 
-        const filtered = elements.filter(el => {
-            const text = el.textContent.trim();
+        // Remove UI elements
+        clone.querySelectorAll(`[${UI_ATTR}]`).forEach(el => el.remove());
 
-            // Filter by length
-            if (text.length < 40) return false;
-
-            // Exclude UI elements
-            if (el.closest(`[${UI_ATTR}]`)) return false;
-
-            // Check against exclusion rules
-            if (isExcluded(el, EXCLUDE)) return false;
-
-            // Exclude if nested inside another text element we're already capturing
-            const parent = el.parentElement;
-            if (parent && parent.closest(textSelectors) && elements.includes(parent.closest(textSelectors))) {
-                return false;
+        // Remove excluded elements (self)
+        if (EXCLUDE.self) {
+            for (const sel of EXCLUDE.self) {
+                try {
+                    clone.querySelectorAll(sel).forEach(el => el.remove());
+                } catch {}
             }
+        }
 
-            return true;
-        });
+        // Remove excluded containers (ancestors)
+        if (EXCLUDE.ancestors) {
+            for (const sel of EXCLUDE.ancestors) {
+                try {
+                    clone.querySelectorAll(sel).forEach(el => el.remove());
+                } catch {}
+            }
+        }
 
-        if (filtered.length === 0) {
-            log('No text elements found in container');
+        // Get visible text content (innerText for browsers, textContent fallback for jsdom/tests)
+        const text = (clone.innerText ?? clone.textContent ?? '').trim();
+
+        if (!text || text.length < 100) {
+            log('No text found in container');
             return null;
         }
 
-        log(`Found ${filtered.length} text elements`);
+        log(`Extracted ${text.length} characters from container`);
 
         return {
-            text: filtered.map(el => el.textContent.trim()).join('\n\n'),
-            elements: filtered,
+            text: text,
+            elements: null,
             container: container,
             title: title
         };
