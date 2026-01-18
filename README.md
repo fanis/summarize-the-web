@@ -92,7 +92,7 @@ For detailed build documentation, see [BUILD.md](BUILD.md).
 
 ### Summarizing Selected Text
 
-1. Highlight any text on a webpage (minimum 100 characters)
+1. Highlight any text on a webpage (minimum 100 characters by default, configurable)
 2. Click **Large** or **Small** in the Summarize panel
 3. The summary will appear in an overlay
 
@@ -111,6 +111,7 @@ Access these via your userscript manager's menu:
 - AI model selection (choose from 5 models with different pricing/quality)
 - Configure custom prompts
 - Simplification style (Conservative/Balanced/Aggressive)
+- Minimum text length (configure minimum characters required for summarization)
 
 **Domain Controls**
 - Toggle between ALLOW and DENY mode

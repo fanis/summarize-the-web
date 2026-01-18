@@ -82,7 +82,11 @@ export const STORAGE_KEYS = {
     EXCLUDES_GLOBAL: 'digest_excludes_v1',
     DOMAIN_SELECTORS: 'digest_domain_selectors_v1',
     DOMAIN_EXCLUDES: 'digest_domain_excludes_v1',
+    MIN_TEXT_LENGTH: 'digest_min_text_length_v1',
 };
+
+// Minimum text length for extraction (in characters)
+export const DEFAULT_MIN_TEXT_LENGTH = 100;
 
 // Default prompts
 export const DEFAULT_PROMPTS = {

@@ -34,20 +34,29 @@ export function isExcluded(el, EXCLUDE) {
 
 /**
  * Get selected text from the page
+ * @param {number} minLength - Minimum text length required
+ * @returns {Object|null} - { text } or { error, actualLength } or null if no selection
  */
-export function getSelectedText() {
+export function getSelectedText(minLength = 100) {
     const selection = window.getSelection();
     const text = selection.toString().trim();
-    if (text && text.length > 100) {
-        return text;
+    if (!text) {
+        return null;
     }
-    return null;
+    if (text.length < minLength) {
+        return { error: 'selection_too_short', actualLength: text.length, minLength };
+    }
+    return { text };
 }
 
 /**
  * Extract article body using configured selectors
+ * @param {string[]} SELECTORS - CSS selectors to find container
+ * @param {Object} EXCLUDE - Exclusion rules
+ * @param {number} minLength - Minimum text length required
+ * @returns {Object|null} - { text, container, title } or { error, ... } or null
  */
-export function extractArticleBody(SELECTORS, EXCLUDE) {
+export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
     let container = null;
 
     // Try each selector in order
@@ -65,7 +74,7 @@ export function extractArticleBody(SELECTORS, EXCLUDE) {
 
     if (!container) {
         log('No article container found');
-        return null;
+        return { error: 'no_container' };
     }
 
     // Try to find article title
@@ -116,9 +125,14 @@ export function extractArticleBody(SELECTORS, EXCLUDE) {
     // Get visible text content (innerText for browsers, textContent fallback for jsdom/tests)
     const text = (clone.innerText ?? clone.textContent ?? '').trim();
 
-    if (!text || text.length < 100) {
-        log('No text found in container or too little');
-        return null;
+    if (!text) {
+        log('No text found in container');
+        return { error: 'no_text' };
+    }
+
+    if (text.length < minLength) {
+        log(`Text too short: ${text.length} < ${minLength}`);
+        return { error: 'article_too_short', actualLength: text.length, minLength };
     }
 
     log(`Extracted ${text.length} characters from container`);
@@ -133,19 +147,26 @@ export function extractArticleBody(SELECTORS, EXCLUDE) {
 
 /**
  * Get text to digest (selection or article body)
+ * @param {string[]} SELECTORS - CSS selectors to find container
+ * @param {Object} EXCLUDE - Exclusion rules
+ * @param {number} minLength - Minimum text length required
+ * @returns {Object} - { text, source, ... } or { error, ... }
  */
-export function getTextToDigest(SELECTORS, EXCLUDE) {
+export function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100) {
     // First check if user has selected text
-    const selected = getSelectedText();
+    const selected = getSelectedText(minLength);
     if (selected) {
-        return { text: selected, elements: null, source: 'selection' };
+        if (selected.error) {
+            return { error: selected.error, actualLength: selected.actualLength, minLength, source: 'selection' };
+        }
+        return { text: selected.text, elements: null, source: 'selection' };
     }
 
     // Otherwise extract article body
-    const article = extractArticleBody(SELECTORS, EXCLUDE);
-    if (article) {
-        return { text: article.text, elements: article.elements, source: 'article', container: article.container };
+    const article = extractArticleBody(SELECTORS, EXCLUDE, minLength);
+    if (article.error) {
+        return { error: article.error, actualLength: article.actualLength, minLength, source: 'article' };
     }
 
-    return null;
+    return { text: article.text, elements: article.elements, source: 'article', container: article.container };
 }

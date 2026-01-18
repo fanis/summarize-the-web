@@ -1,4 +1,4 @@
-import { CFG, STORAGE_KEYS, MODEL_OPTIONS, DEFAULT_SELECTORS, DEFAULT_EXCLUDES, DEFAULT_PROMPTS, SIMPLIFICATION_LEVELS } from './modules/config.js';
+import { CFG, STORAGE_KEYS, MODEL_OPTIONS, DEFAULT_SELECTORS, DEFAULT_EXCLUDES, DEFAULT_PROMPTS, SIMPLIFICATION_LEVELS, DEFAULT_MIN_TEXT_LENGTH } from './modules/config.js';
 import { log } from './modules/utils.js';
 import { Storage } from './modules/storage.js';
 import { domainPatternToRegex, listMatchesHost } from './modules/selectors.js';
@@ -94,6 +94,16 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     let AUTO_SIMPLIFY = false;
     try { const v = await storage.get(STORAGE_KEYS.AUTO_SIMPLIFY, ''); if (v !== '') AUTO_SIMPLIFY = (v === true || v === 'true'); } catch {}
 
+    // Minimum text length for extraction
+    let MIN_TEXT_LENGTH = DEFAULT_MIN_TEXT_LENGTH;
+    try {
+        const v = await storage.get(STORAGE_KEYS.MIN_TEXT_LENGTH, '');
+        if (v !== '') {
+            const parsed = parseInt(v, 10);
+            if (!isNaN(parsed) && parsed >= 0) MIN_TEXT_LENGTH = parsed;
+        }
+    } catch {}
+
     // Initialize cache
     const cache = new DigestCache(storage);
     await cache.init();
@@ -159,9 +169,28 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         updateOverlayStatus('processing', mode, false);
 
         try {
-            const textData = getTextToDigest(SELECTORS, EXCLUDE);
-            if (!textData) {
-                openInfo('No text found to summarize. Try selecting text or visit an article page.');
+            const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+
+            // Handle extraction errors
+            if (textData.error) {
+                let msg;
+                switch (textData.error) {
+                    case 'selection_too_short':
+                        msg = `Selected text is too short (${textData.actualLength} chars). Minimum is ${textData.minLength} chars.`;
+                        break;
+                    case 'article_too_short':
+                        msg = `Article text is too short (${textData.actualLength} chars). Minimum is ${textData.minLength} chars.\nTry selecting text manually or adjust the minimum length in settings.`;
+                        break;
+                    case 'no_container':
+                        msg = 'No article container found. Try selecting text manually or add a custom selector for this site.';
+                        break;
+                    case 'no_text':
+                        msg = 'Container found but no text inside. Try selecting text manually.';
+                        break;
+                    default:
+                        msg = 'No text found to summarize. Try selecting text or visit an article page.';
+                }
+                openInfo(msg);
                 updateOverlayStatus('ready');
                 return;
             }
@@ -282,6 +311,20 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     GM_registerMenuCommand?.('Custom prompts', () => {
         openCustomPromptDialog(storage, CUSTOM_PROMPTS, setCustomPrompts);
+    });
+
+    GM_registerMenuCommand?.(`Minimum text length (${MIN_TEXT_LENGTH} chars)`, () => {
+        const input = prompt(`Minimum text length for extraction (current: ${MIN_TEXT_LENGTH} chars):`, MIN_TEXT_LENGTH);
+        if (input === null) return;
+        const val = parseInt(input, 10);
+        if (isNaN(val) || val < 0) {
+            openInfo('Invalid value. Please enter a non-negative number.');
+            return;
+        }
+        storage.set(STORAGE_KEYS.MIN_TEXT_LENGTH, String(val)).then(() => {
+            MIN_TEXT_LENGTH = val;
+            openInfo(`Minimum text length set to ${val} characters.`);
+        });
     });
 
     // Selector configuration menu commands
@@ -443,8 +486,8 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     // Auto-simplify if enabled
     if (AUTO_SIMPLIFY) {
         setTimeout(() => {
-            const textData = getTextToDigest(SELECTORS, EXCLUDE);
-            if (textData && textData.source === 'article') {
+            const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+            if (!textData.error && textData.source === 'article') {
                 log('Auto-simplify enabled, applying large summary...');
                 handleDigest('large');
             }

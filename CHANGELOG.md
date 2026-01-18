@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-01-18
+
+### Changed
+- Text extraction now uses `innerText` instead of querying specific elements (p, li, blockquote)
+  - Better support for non-semantic HTML (Gmail, web apps using divs)
+  - Headings (h1-h6), tables, and all visible text now extracted automatically
+
+### Added
+- Configurable minimum text length (default: 100 characters)
+  - New menu option: "Minimum text length (X chars)"
+  - Helps with short emails or content that was previously rejected
+- Specific error messages for extraction failures:
+  - "Selected text is too short (X chars)"
+  - "Article text is too short (X chars)"
+  - "No article container found"
+  - "Container found but no text inside"
+- Comprehensive extraction test suite (48 tests covering container detection, exclusions, Gmail-style content, minLength configuration)
+
 ## [1.4.0] - 2026-01-18
 
 ### Changed

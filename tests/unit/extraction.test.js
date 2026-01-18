@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { extractArticleBody, getTextToDigest, isExcluded, getSelectedText } from '../../src/modules/extraction.js';
-import { DEFAULT_SELECTORS, DEFAULT_EXCLUDES } from '../../src/modules/config.js';
+import { DEFAULT_SELECTORS, DEFAULT_EXCLUDES, DEFAULT_MIN_TEXT_LENGTH } from '../../src/modules/config.js';
 import { createTestDOM } from '../setup.js';
 
 // Sample article text (must be > 100 chars for extraction to succeed)
@@ -9,10 +9,63 @@ It contains multiple sentences and paragraphs to simulate real article content.
 The quick brown fox jumps over the lazy dog. Lorem ipsum dolor sit amet.`;
 
 const SHORT_TEXT = 'Too short';
+const MIN_LENGTH = DEFAULT_MIN_TEXT_LENGTH;
 
 describe('Extraction Module', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+  });
+
+  describe('getSelectedText', () => {
+    it('should return null when no selection', () => {
+      // Mock empty selection
+      vi.spyOn(window, 'getSelection').mockReturnValue({
+        toString: () => ''
+      });
+
+      const result = getSelectedText();
+
+      expect(result).toBeNull();
+    });
+
+    it('should return error when selection is too short', () => {
+      vi.spyOn(window, 'getSelection').mockReturnValue({
+        toString: () => 'Short text'
+      });
+
+      const result = getSelectedText(100);
+
+      expect(result.error).toBe('selection_too_short');
+      expect(result.actualLength).toBe(10);
+      expect(result.minLength).toBe(100);
+    });
+
+    it('should return text when selection meets minLength', () => {
+      const longText = 'A'.repeat(150);
+      vi.spyOn(window, 'getSelection').mockReturnValue({
+        toString: () => longText
+      });
+
+      const result = getSelectedText(100);
+
+      expect(result.error).toBeUndefined();
+      expect(result.text).toBe(longText);
+    });
+
+    it('should use configurable minLength', () => {
+      vi.spyOn(window, 'getSelection').mockReturnValue({
+        toString: () => 'Hello world'
+      });
+
+      // Should fail with default minLength
+      const result1 = getSelectedText();
+      expect(result1.error).toBe('selection_too_short');
+
+      // Should succeed with low minLength
+      const result2 = getSelectedText(5);
+      expect(result2.error).toBeUndefined();
+      expect(result2.text).toBe('Hello world');
+    });
   });
 
   describe('isExcluded', () => {
@@ -56,7 +109,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(['article'], { self: [], ancestors: [] });
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
         expect(result.text).toContain('sample article');
       });
 
@@ -65,7 +118,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(['[itemprop="articleBody"]'], { self: [], ancestors: [] });
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
         expect(result.text).toContain('sample article');
       });
 
@@ -74,7 +127,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(['.post-content'], { self: [], ancestors: [] });
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
       });
 
       it('should try selectors in order and use first match', () => {
@@ -85,16 +138,16 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(['article', 'main'], { self: [], ancestors: [] });
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
         expect(result.text).toContain('sample article');
       });
 
-      it('should return null when no container found', () => {
+      it('should return error when no container found', () => {
         createTestDOM('<div>Random content</div>');
 
         const result = extractArticleBody(['.nonexistent'], { self: [], ancestors: [] });
 
-        expect(result).toBeNull();
+        expect(result.error).toBe('no_container');
       });
 
       it('should handle invalid selectors gracefully', () => {
@@ -102,7 +155,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(['[invalid', 'article'], { self: [], ancestors: [] });
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
       });
     });
 
@@ -225,7 +278,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(['.a3s.aiL'], { self: [], ancestors: [] });
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
         expect(result.text).toContain('Meeting Notes');
         expect(result.text).toContain('Hi team');
         expect(result.text).toContain('Project update completed');
@@ -389,7 +442,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
         expect(result.text).toContain('Breaking News');
         expect(result.text).toContain('sample article');
         // These should be excluded by DEFAULT_EXCLUDES
@@ -413,7 +466,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
         expect(result.text).toContain('Blog Post Title');
         expect(result.text).not.toContain('Reader comment');
       });
@@ -476,29 +529,75 @@ describe('Extraction Module', () => {
       });
     });
 
-    describe('edge cases', () => {
-      it('should return null for content below minimum length', () => {
+    describe('configurable minLength', () => {
+      it('should use default minLength of 100', () => {
         createTestDOM(`<article><p>${SHORT_TEXT}</p></article>`);
 
         const result = extractArticleBody(['article'], { self: [], ancestors: [] });
 
-        expect(result).toBeNull();
+        expect(result.error).toBe('article_too_short');
+        expect(result.minLength).toBe(MIN_LENGTH);
       });
 
-      it('should return null for empty container', () => {
+      it('should accept custom minLength parameter', () => {
+        createTestDOM(`<article><p>This is medium length text for testing.</p></article>`);
+
+        // Should fail with high minLength
+        const result1 = extractArticleBody(['article'], { self: [], ancestors: [] }, 500);
+        expect(result1.error).toBe('article_too_short');
+        expect(result1.minLength).toBe(500);
+
+        // Should succeed with low minLength
+        const result2 = extractArticleBody(['article'], { self: [], ancestors: [] }, 10);
+        expect(result2.error).toBeUndefined();
+        expect(result2.text).toContain('medium length');
+      });
+
+      it('should allow any text when minLength is 0', () => {
+        createTestDOM(`<article><p>Hi</p></article>`);
+
+        const result = extractArticleBody(['article'], { self: [], ancestors: [] }, 0);
+
+        expect(result.error).toBeUndefined();
+        expect(result.text).toBe('Hi');
+      });
+
+      it('should include actualLength in error response', () => {
+        createTestDOM(`<article><p>Exactly twenty chars</p></article>`);
+
+        const result = extractArticleBody(['article'], { self: [], ancestors: [] }, 100);
+
+        expect(result.error).toBe('article_too_short');
+        expect(result.actualLength).toBe(20);
+        expect(result.minLength).toBe(100);
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should return error for content below minimum length', () => {
+        createTestDOM(`<article><p>${SHORT_TEXT}</p></article>`);
+
+        const result = extractArticleBody(['article'], { self: [], ancestors: [] });
+
+        expect(result.error).toBe('article_too_short');
+        expect(result.actualLength).toBeDefined();
+        expect(result.minLength).toBe(MIN_LENGTH);
+      });
+
+      it('should return error for empty container', () => {
         createTestDOM('<article></article>');
 
         const result = extractArticleBody(['article'], { self: [], ancestors: [] });
 
-        expect(result).toBeNull();
+        expect(result.error).toBe('no_text');
       });
 
-      it('should return null for whitespace-only container', () => {
+      it('should return error for whitespace-only container', () => {
         createTestDOM('<article>   \n\t   </article>');
 
         const result = extractArticleBody(['article'], { self: [], ancestors: [] });
 
-        expect(result).toBeNull();
+        expect(result.error).toBe('no_text');
       });
 
       it('should handle deeply nested content', () => {
@@ -512,7 +611,7 @@ describe('Extraction Module', () => {
 
         const result = extractArticleBody(['article'], { self: [], ancestors: [] });
 
-        expect(result).not.toBeNull();
+        expect(result.error).toBeUndefined();
         expect(result.text).toContain('sample article');
       });
 
@@ -534,22 +633,30 @@ describe('Extraction Module', () => {
   });
 
   describe('getTextToDigest', () => {
+    beforeEach(() => {
+      // Reset selection mock to return empty (no selection)
+      vi.spyOn(window, 'getSelection').mockReturnValue({
+        toString: () => ''
+      });
+    });
+
     it('should return article text when no selection', () => {
       createTestDOM(`<article><p>${ARTICLE_TEXT}</p></article>`);
 
       const result = getTextToDigest(['article'], { self: [], ancestors: [] });
 
-      expect(result).not.toBeNull();
+      expect(result.error).toBeUndefined();
       expect(result.source).toBe('article');
       expect(result.text).toContain('sample article');
     });
 
-    it('should return null when no content found', () => {
+    it('should return error when no container found', () => {
       createTestDOM('<div>Random</div>');
 
       const result = getTextToDigest(['.nonexistent'], { self: [], ancestors: [] });
 
-      expect(result).toBeNull();
+      expect(result.error).toBe('no_container');
+      expect(result.source).toBe('article');
     });
 
     it('should include container reference', () => {
@@ -559,6 +666,15 @@ describe('Extraction Module', () => {
 
       expect(result.container).not.toBeNull();
       expect(result.container.id).toBe('main');
+    });
+
+    it('should use configurable minLength', () => {
+      createTestDOM(`<article><p>Short text here</p></article>`);
+
+      const result = getTextToDigest(['article'], { self: [], ancestors: [] }, 500);
+
+      expect(result.error).toBe('article_too_short');
+      expect(result.minLength).toBe(500);
     });
   });
 });
