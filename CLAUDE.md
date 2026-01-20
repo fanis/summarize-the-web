@@ -93,3 +93,7 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) automatically crea
 ## Documentation Style
 
 When writing code blocks with commands that IDEs can detect and run, put comments on the line above the command, not inline. Inline comments break IDE click-to-run functionality.
+
+## Workflow Rules
+
+- Only run build and tests when actual code is edited (src/*, tests/*), not for documentation-only changes (README, CHANGELOG, etc.)

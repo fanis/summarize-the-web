@@ -2,7 +2,7 @@
 
 A userscript that summarizes and simplifies web articles using the OpenAI API. Get quick summaries of any article or selected text directly in your browser.
 
-> **Latest Version**: 1.4.0 | [See What's New](CHANGELOG.md)
+> **Latest Version**: 1.6.0 | [See What's New](CHANGELOG.md)
 
 ## Features
 
@@ -19,7 +19,9 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 - **Usage Statistics**: Track API token usage and estimated costs
 - **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile, with full touch support for dragging
 
-**New in 1.4.0:** Full GPT-5 model compatibility. Simplification styles now use prompt-based control instead of temperature. Better error messages for API issues.
+**New in 1.5.0:** innerText-based extraction for better non-semantic HTML support (Gmail, web apps). Configurable minimum text length.
+
+**New in 1.6.0:** Multiple container combining - when content is split across sections, extraction combines them automatically.
 
 ## Installation
 
