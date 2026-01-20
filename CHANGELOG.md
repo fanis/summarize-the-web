@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-01-20
+
+### Added
+- Multiple container combining: when no single container is dominant, combines text from multiple significant containers
+  - Dominant = >70% of page text AND next best <50% of dominant
+  - Significant = >15% of page text AND meets minimum length
+  - Filters out nested containers to avoid duplicate text
+  - Useful for pages with content split across multiple sections
+
 ## [1.5.0] - 2026-01-18
 
 ### Changed

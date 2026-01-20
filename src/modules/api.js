@@ -232,7 +232,7 @@ export async function digestText(storage, text, mode, prompt, styleLevel, cacheG
 
     const resText = await xhrPost('https://api.openai.com/v1/responses', body, apiHeaders(KEY));
     const payload = JSON.parse(resText);
-    log('API response payload:', JSON.stringify(payload, null, 2));
+    log('API response status:', payload.status, 'usage:', payload.usage);
 
     if (payload.usage) {
         updateApiTokens(storage, 'digest', payload.usage);
@@ -283,7 +283,7 @@ export async function digestText(storage, text, mode, prompt, styleLevel, cacheG
  * Handle API errors with friendly messages
  */
 export function friendlyApiError(err, openKeyDialog, openInfo) {
-    console.log('API Error details:', err, 'Body:', err.body);
+    log('API error:', err?.status, err?.message);
     const s = err?.status || 0;
     if (s === 401) { openKeyDialog('Unauthorized (401). Please enter a valid OpenAI key.'); return; }
     if (s === 429) { openInfo('Rate limited by API (429). Try again in a minute.'); return; }

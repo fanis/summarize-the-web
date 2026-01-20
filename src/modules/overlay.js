@@ -10,6 +10,14 @@ let summaryOverlay = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let autoCollapsedOverlay = false;
+let autoCollapsedState = null;
+
+export const BADGE_WIDTH = 150;
+
+/** Viewport width excluding scrollbar */
+function viewportWidth() {
+    return document.documentElement.clientWidth;
+}
 
 /**
  * Ensure CSS is loaded
@@ -310,7 +318,7 @@ export function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest,
     overlay.setAttribute(UI_ATTR, '');
 
     // Set initial position
-    const maxX = window.innerWidth - 170;
+    const maxX = viewportWidth() - BADGE_WIDTH;
     const maxY = window.innerHeight - 200;
     OVERLAY_POS.x = Math.max(0, Math.min(OVERLAY_POS.x, maxX));
     OVERLAY_POS.y = Math.max(0, Math.min(OVERLAY_POS.y, maxY));
@@ -383,7 +391,7 @@ async function toggleSlide(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage) {
     } else {
         overlay.classList.remove('collapsed');
         const currentY = parseInt(overlay.style.top) || OVERLAY_POS.y;
-        const rightEdgeX = window.innerWidth - 170;
+        const rightEdgeX = viewportWidth() - BADGE_WIDTH;
 
         overlay.style.right = '';
         overlay.style.transform = '';
@@ -426,7 +434,7 @@ function startDrag(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage) {
         let newX = clientX - dragOffset.x;
         let newY = clientY - dragOffset.y;
 
-        const maxX = window.innerWidth - overlay.offsetWidth;
+        const maxX = viewportWidth() - overlay.offsetWidth;
         const maxY = window.innerHeight - overlay.offsetHeight;
         newX = Math.max(0, Math.min(newX, maxX));
         newY = Math.max(0, Math.min(newY, maxY));
@@ -501,6 +509,7 @@ export function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPS
     // Auto-collapse actions overlay on mobile to prevent overlap
     if (overlay && !OVERLAY_COLLAPSED.value) {
         autoCollapsedOverlay = true;
+        autoCollapsedState = OVERLAY_COLLAPSED;
         collapseOverlay(OVERLAY_COLLAPSED);
     }
 
@@ -605,8 +614,12 @@ function collapseOverlay(OVERLAY_COLLAPSED) {
  */
 function expandOverlay() {
     if (!overlay) return;
+    if (autoCollapsedState) {
+        autoCollapsedState.value = false;
+        autoCollapsedState = null;
+    }
     overlay.classList.remove('collapsed');
-    const rightEdgeX = window.innerWidth - 170;
+    const rightEdgeX = viewportWidth() - BADGE_WIDTH;
     overlay.style.right = '';
     overlay.style.transform = '';
     overlay.style.left = `${rightEdgeX}px`;

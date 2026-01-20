@@ -11,7 +11,7 @@ import {
 } from './modules/settings.js';
 import { enterInspectionMode } from './modules/inspection.js';
 import { getTextToDigest } from './modules/extraction.js';
-import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, removeSummaryOverlay } from './modules/overlay.js';
+import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, removeSummaryOverlay, BADGE_WIDTH } from './modules/overlay.js';
 
 (async () => {
     'use strict';
@@ -87,7 +87,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     let OVERLAY_COLLAPSED = { value: false };
     try { const v = await storage.get(STORAGE_KEYS.OVERLAY_COLLAPSED, ''); if (v !== '') OVERLAY_COLLAPSED.value = (v === true || v === 'true'); } catch {}
 
-    let OVERLAY_POS = { x: window.innerWidth - 170, y: 100 };
+    let OVERLAY_POS = { x: document.documentElement.clientWidth - BADGE_WIDTH, y: window.innerHeight * 0.7 };
     try { const v = await storage.get(STORAGE_KEYS.OVERLAY_POS, ''); if (v) OVERLAY_POS = JSON.parse(v); } catch {}
 
     // Auto-simplify setting
