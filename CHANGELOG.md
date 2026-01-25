@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-01-25
+
+### Improved
+- Summary overlay readability on wide displays
+  - Text column constrained to 680px max-width for optimal line length (~65-75 characters)
+  - Centered text column within overlay
+  - Increased font size (16px → 17px) and line height (1.7 → 1.8)
+  - Added subtle letter-spacing and word-spacing for improved readability
+  - Proportional paragraph margins using em units
+
 ## [1.6.0] - 2026-01-20
 
 ### Added
