@@ -2,7 +2,7 @@
 
 A userscript that summarizes and simplifies web articles using the OpenAI API. Get quick summaries of any article or selected text directly in your browser.
 
-> **Latest Version**: 1.6.1 | [See What's New](CHANGELOG.md)
+> **Latest Version**: 1.6.2 | [See What's New](CHANGELOG.md)
 
 ## Features
 

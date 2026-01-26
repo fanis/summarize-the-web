@@ -55,7 +55,7 @@ export function ensureCSS() {
         }
         .digest-slide-handle {
             position: absolute !important;
-            left: -28px !important;
+            left: -30px !important;
             top: 50% !important;
             transform: translateY(-50%) !important;
             width: 28px !important;
@@ -74,7 +74,7 @@ export function ensureCSS() {
             transition: all 0.2s ease !important;
         }
         .digest-slide-handle:hover {
-            left: -30px !important;
+            left: -32px !important;
             box-shadow: -4px 0 16px rgba(0,0,0,.3) !important;
         }
         .digest-handle {
@@ -187,7 +187,7 @@ export function ensureCSS() {
             border: 3px solid #667eea !important;
             border-radius: 16px !important;
             width: 96% !important;
-            max-width: 1200px !important;
+            max-width: 760px !important;
             max-height: 90vh !important;
             box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35), 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
             animation: digest-summary-fadein 0.3s ease !important;
