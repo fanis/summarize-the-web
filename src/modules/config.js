@@ -83,6 +83,34 @@ export const STORAGE_KEYS = {
     DOMAIN_SELECTORS: 'digest_domain_selectors_v1',
     DOMAIN_EXCLUDES: 'digest_domain_excludes_v1',
     MIN_TEXT_LENGTH: 'digest_min_text_length_v1',
+    // Display settings
+    SUMMARY_FONT_SIZE: 'digest_summary_font_size_v1',
+    SUMMARY_LINE_HEIGHT: 'digest_summary_line_height_v1',
+    THEME: 'digest_theme_v1',
+    SHORTCUT_LARGE: 'digest_shortcut_large_v1',
+    SHORTCUT_SMALL: 'digest_shortcut_small_v1',
+};
+
+// Theme options
+export const THEME_OPTIONS = ['light', 'dark', 'auto'];
+
+// Default keyboard shortcuts
+export const DEFAULT_SHORTCUTS = {
+    large: { key: 'L', alt: true, shift: true, ctrl: false },
+    small: { key: 'S', alt: true, shift: true, ctrl: false }
+};
+
+// Summary display settings
+export const SUMMARY_FONT_SIZES = {
+    small: 15,
+    default: 17,
+    large: 20
+};
+
+export const SUMMARY_LINE_HEIGHTS = {
+    compact: 1.5,
+    default: 1.8,
+    comfortable: 2.1
 };
 
 // Minimum text length for extraction (in characters)

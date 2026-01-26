@@ -220,7 +220,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
             );
 
             updateOverlayStatus('digested', mode);
-            showSummaryOverlay(result, mode, container, OVERLAY_COLLAPSED, restoreOriginal);
+            showSummaryOverlay(result, mode, container, OVERLAY_COLLAPSED, restoreOriginal, storage);
 
         } catch (err) {
             console.error('Digest error:', err);

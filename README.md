@@ -2,13 +2,16 @@
 
 A userscript that summarizes and simplifies web articles using the OpenAI API. Get quick summaries of any article or selected text directly in your browser.
 
-> **Latest Version**: 1.6.2 | [See What's New](CHANGELOG.md)
+> **Latest Version**: 2.0.0 | [See What's New](CHANGELOG.md)
 
 ## Features
 
 - **Two Summary Sizes**: Choose between Large (50%) or Small (20%) summaries
 - **Works with Articles & Selected Text**: Summarize entire articles or just highlight specific text
 - **AI Model Selection**: Choose from 5 different OpenAI models (GPT-5, GPT-4.1) with different pricing and quality levels
+- **Display Settings**: Configurable font size and line spacing for comfortable reading
+- **Dark Mode**: Light/Dark/Auto themes following system preference
+- **Keyboard Shortcuts**: Configurable hotkeys for quick summarization (default: Alt+Shift+L/S)
 - **Element Inspection Mode**: Diagnostic tool to troubleshoot why elements are/aren't being detected
 - **Configurable Selectors**: Global + per-domain CSS selector configuration for article containers
 - **Caching**: Previously generated summaries are cached to save API costs
@@ -19,11 +22,9 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 - **Usage Statistics**: Track API token usage and estimated costs
 - **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile, with full touch support for dragging
 
-**New in 1.5.0:** innerText-based extraction for better non-semantic HTML support (Gmail, web apps). Configurable minimum text length.
+**New in 2.0.0:** Display settings (font size, line spacing), dark mode support, and configurable keyboard shortcuts.
 
-**New in 1.6.0:** Multiple container combining - when content is split across sections, extraction combines them automatically.
-
-**New in 1.6.1:** Improved summary readability on wide displays with optimized text column width and typography.
+**New in 1.6.x:** Multiple container combining, improved summary readability on wide displays.
 
 ## Installation
 

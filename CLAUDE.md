@@ -97,3 +97,4 @@ When writing code blocks with commands that IDEs can detect and run, put comment
 ## Workflow Rules
 
 - Only run build and tests when actual code is edited (src/*, tests/*), not for documentation-only changes (README, CHANGELOG, etc.)
+- Git push to GitHub requires manual execution for authentication - remind user to push

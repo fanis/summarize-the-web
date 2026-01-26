@@ -149,6 +149,106 @@ describe('Overlay Module', () => {
     });
   });
 
+  describe('Display settings CSS', () => {
+    let createdElement;
+
+    beforeEach(async () => {
+      createdElement = { id: '', textContent: '' };
+      global.document = {
+        getElementById: vi.fn().mockReturnValue(null),
+        createElement: vi.fn().mockReturnValue(createdElement),
+        head: { appendChild: vi.fn() }
+      };
+      vi.resetModules();
+      const { ensureCSS } = await import('../../src/modules/overlay.js');
+      ensureCSS();
+    });
+
+    it('includes CSS custom property for font size', () => {
+      expect(createdElement.textContent).toContain('--digest-font-size');
+    });
+
+    it('includes CSS custom property for line height', () => {
+      expect(createdElement.textContent).toContain('--digest-line-height');
+    });
+
+    it('includes settings button styles', () => {
+      expect(createdElement.textContent).toContain('.digest-settings-btn');
+    });
+
+    it('includes badge settings container styles', () => {
+      expect(createdElement.textContent).toContain('.digest-badge-settings');
+    });
+
+    it('includes digest footer layout styles', () => {
+      expect(createdElement.textContent).toContain('.digest-footer');
+    });
+
+    it('includes settings popover styles', () => {
+      expect(createdElement.textContent).toContain('.digest-settings-popover');
+    });
+
+    it('includes settings option styles', () => {
+      expect(createdElement.textContent).toContain('.digest-settings-option');
+    });
+
+    it('includes active state for settings options', () => {
+      expect(createdElement.textContent).toContain('.digest-settings-option.active');
+    });
+
+    it('popover is hidden by default', () => {
+      expect(createdElement.textContent).toMatch(/\.digest-settings-popover\s*\{[^}]*display:\s*none/);
+    });
+
+    it('popover shows when open class applied', () => {
+      expect(createdElement.textContent).toMatch(/\.digest-settings-popover\.open\s*\{[^}]*display:\s*block/);
+    });
+
+    it('includes dark mode class for overlay', () => {
+      expect(createdElement.textContent).toContain('.digest-overlay.digest-dark');
+    });
+
+    it('includes dark mode class for summary overlay', () => {
+      expect(createdElement.textContent).toContain('.digest-summary-overlay.digest-dark');
+    });
+
+    it('includes dark mode styles for settings popover', () => {
+      expect(createdElement.textContent).toContain('.digest-dark .digest-settings-popover');
+    });
+
+    it('includes dark mode styles for buttons', () => {
+      expect(createdElement.textContent).toContain('.digest-dark .digest-btn');
+    });
+
+    it('includes shortcut input styles', () => {
+      expect(createdElement.textContent).toContain('.digest-shortcut-input');
+    });
+
+    it('includes shortcut row styles', () => {
+      expect(createdElement.textContent).toContain('.digest-shortcut-row');
+    });
+
+    it('includes shortcut recording state', () => {
+      expect(createdElement.textContent).toContain('.digest-shortcut-input.recording');
+    });
+
+    it('includes dark mode styles for shortcuts', () => {
+      expect(createdElement.textContent).toContain('.digest-dark .digest-shortcut-input');
+    });
+
+    it('includes summary header controls styles', () => {
+      expect(createdElement.textContent).toContain('.digest-summary-header-controls');
+    });
+
+    it('includes summary settings button styles', () => {
+      expect(createdElement.textContent).toContain('.digest-summary-settings-btn');
+    });
+
+    it('includes summary settings container styles', () => {
+      expect(createdElement.textContent).toContain('.digest-summary-settings');
+    });
+  });
+
   describe('CSS specifications', () => {
     it('CSS includes high z-index for overlay', async () => {
       const createdElement = {

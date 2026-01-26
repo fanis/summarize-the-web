@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-01-26
+
+### Added
+- **Display Settings**: Configurable font size (Small/Default/Large) and line spacing (Compact/Default/Comfortable) in badge settings
+- **Dark Mode**: Light/Dark/Auto theme support following system `prefers-color-scheme`
+- **Keyboard Shortcuts**: Configurable shortcuts for triggering summaries (default: Alt+Shift+L for Large, Alt+Shift+S for Small)
+- **Live Preview Settings**: Gear icon in summary header for adjusting display settings while viewing summary
+- New unit tests for config and overlay modules (182 total tests)
+
+### Changed
+- Badge UI restructured: footer layout with status text and gear icon
+- Inspect button moved into settings popover for cleaner interface
+- Settings popover always opens upward to prevent screen edge cutoff
+
 ## [1.6.2] - 2026-01-26
 
 ### Changed
