@@ -9,7 +9,7 @@ import {
     openSimplificationStyleDialog, openModelSelectionDialog, openCustomPromptDialog,
     showStats, openDomainEditor
 } from './modules/settings.js';
-import { enterInspectionMode } from './modules/inspection.js';
+import { enterInspectionMode, showSummaryHighlight } from './modules/inspection.js';
 import { getTextToDigest } from './modules/extraction.js';
 import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, removeSummaryOverlay, BADGE_WIDTH } from './modules/overlay.js';
 
@@ -249,6 +249,11 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         );
     }
 
+    // Summary highlight handler
+    function handleSummaryHighlight() {
+        showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+    }
+
     // Settings functions
     async function setSimplification(level) {
         if (!SIMPLIFICATION_LEVELS.includes(level)) return;
@@ -452,6 +457,10 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     GM_registerMenuCommand?.('Inspect element', handleInspection);
 
+    GM_registerMenuCommand?.('Included in summary', () => {
+        showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+    });
+
     // Bootstrap
     const isFirstInstall = await storage.get(STORAGE_KEYS.FIRST_INSTALL, '') === '';
     const hasApiKey = (await storage.get(STORAGE_KEYS.OPENAI_KEY, '')) !== '';
@@ -481,7 +490,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     }
 
     // Create overlay
-    createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection);
+    createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight);
 
     // Auto-simplify if enabled
     if (AUTO_SIMPLIFY) {
@@ -496,7 +505,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     // Observe DOM changes to ensure overlay persists
     const mo = new MutationObserver(() => {
-        ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection);
+        ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight);
     });
     mo.observe(document.body, { childList: true, subtree: false });
 

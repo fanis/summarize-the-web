@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-01-29
+
+### Added
+- **Show Included Elements**: New feature to highlight which page elements would be included in a summary (green border visualization)
+- `@noframes` directive to prevent script running in iframes
+
+### Fixed
+- Duplicate badge overlay when Headlines Neutralizer also active on page (DOM-based creation lock)
+- CSS conflicts with other userscripts by using ID-based selectors for badge styling
+- Summary overlay settings buttons now properly styled (were unstyled after CSS refactor)
+- Handle hover animation now extends width to prevent visual gap/disconnect
+
+### Changed
+- All badge CSS selectors now use `#summarizer-overlay-singleton` prefix for isolation
+- Renamed "Included in Summary" button to "Show Included Elements"
+
 ## [2.0.0] - 2026-01-26
 
 ### Added

@@ -63,7 +63,7 @@ async function injectUserscript(page) {
   await page.waitForTimeout(500);
 
   // If overlay didn't appear, log errors for debugging
-  const hasOverlay = await page.evaluate(() => !!document.querySelector('.digest-overlay'));
+  const hasOverlay = await page.evaluate(() => !!document.querySelector('.summarizer-overlay'));
   if (!hasOverlay && errors.length > 0) {
     console.log('Script errors:', errors);
   }
@@ -82,32 +82,32 @@ test.describe('Overlay UI', () => {
     // Simulate overlay creation (mimics what overlay.js does)
     await page.evaluate(() => {
       const overlay = document.createElement('div');
-      overlay.className = 'digest-overlay';
+      overlay.className = 'summarizer-overlay';
       overlay.setAttribute('data-digest-ui', '');
       overlay.innerHTML = `
-        <div class="digest-slide-handle">▶</div>
-        <div class="digest-handle">
-          <div class="digest-title">Summarize</div>
+        <div class="summarizer-slide-handle">▶</div>
+        <div class="summarizer-handle">
+          <div class="summarizer-title">Summarize</div>
         </div>
-        <div class="digest-content">
-          <div class="digest-buttons">
-            <button class="digest-btn" data-size="large">Large</button>
-            <button class="digest-btn" data-size="small">Small</button>
+        <div class="summarizer-content">
+          <div class="summarizer-buttons">
+            <button class="summarizer-btn" data-size="large">Large</button>
+            <button class="summarizer-btn" data-size="small">Small</button>
           </div>
-          <button class="digest-btn inspect-btn">Inspect</button>
-          <div class="digest-status">Ready</div>
+          <button class="summarizer-btn inspect-btn">Inspect</button>
+          <div class="summarizer-status">Ready</div>
         </div>
       `;
       document.body.appendChild(overlay);
     });
 
     // Verify structure
-    await expect(page.locator('.digest-overlay')).toBeVisible();
-    await expect(page.locator('.digest-title')).toHaveText('Summarize');
+    await expect(page.locator('.summarizer-overlay')).toBeVisible();
+    await expect(page.locator('.summarizer-title')).toHaveText('Summarize');
     await expect(page.locator('[data-size="large"]')).toBeVisible();
     await expect(page.locator('[data-size="small"]')).toBeVisible();
     await expect(page.locator('.inspect-btn')).toBeVisible();
-    await expect(page.locator('.digest-status')).toHaveText('Ready');
+    await expect(page.locator('.summarizer-status')).toHaveText('Ready');
   });
 
   test('should handle button clicks', async ({ page }) => {
@@ -116,9 +116,9 @@ test.describe('Overlay UI', () => {
       <html>
         <head><title>Test</title></head>
         <body>
-          <div class="digest-overlay">
-            <button class="digest-btn" data-size="large">Large</button>
-            <button class="digest-btn" data-size="small">Small</button>
+          <div class="summarizer-overlay">
+            <button class="summarizer-btn" data-size="large">Large</button>
+            <button class="summarizer-btn" data-size="small">Small</button>
           </div>
         </body>
       </html>
@@ -127,7 +127,7 @@ test.describe('Overlay UI', () => {
     // Add click handler
     await page.evaluate(() => {
       window.clickedSize = null;
-      document.querySelectorAll('.digest-btn').forEach(btn => {
+      document.querySelectorAll('.summarizer-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           window.clickedSize = btn.dataset.size;
         });
@@ -151,8 +151,8 @@ test.describe('Overlay UI', () => {
       <html>
         <head><title>Test</title></head>
         <body>
-          <div class="digest-overlay">
-            <div class="digest-status">Ready</div>
+          <div class="summarizer-overlay">
+            <div class="summarizer-status">Ready</div>
           </div>
         </body>
       </html>
@@ -160,19 +160,19 @@ test.describe('Overlay UI', () => {
 
     // Simulate status update
     await page.evaluate(() => {
-      const status = document.querySelector('.digest-status');
+      const status = document.querySelector('.summarizer-status');
       status.textContent = 'Processing Large...';
     });
 
-    await expect(page.locator('.digest-status')).toHaveText('Processing Large...');
+    await expect(page.locator('.summarizer-status')).toHaveText('Processing Large...');
 
     // Simulate completion
     await page.evaluate(() => {
-      const status = document.querySelector('.digest-status');
+      const status = document.querySelector('.summarizer-status');
       status.textContent = 'Large summary applied';
     });
 
-    await expect(page.locator('.digest-status')).toHaveText('Large summary applied');
+    await expect(page.locator('.summarizer-status')).toHaveText('Large summary applied');
   });
 
   test('should toggle collapsed state', async ({ page }) => {
@@ -181,34 +181,34 @@ test.describe('Overlay UI', () => {
       <html>
         <head><title>Test</title></head>
         <body>
-          <div class="digest-overlay">
-            <div class="digest-slide-handle">▶</div>
+          <div class="summarizer-overlay">
+            <div class="summarizer-slide-handle">▶</div>
           </div>
         </body>
       </html>
     `);
 
-    const overlay = page.locator('.digest-overlay');
+    const overlay = page.locator('.summarizer-overlay');
 
     // Initially not collapsed
     await expect(overlay).not.toHaveClass(/collapsed/);
 
     // Toggle to collapsed
     await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       overlay.classList.add('collapsed');
-      const handle = document.querySelector('.digest-slide-handle');
+      const handle = document.querySelector('.summarizer-slide-handle');
       handle.textContent = '◀';
     });
 
     await expect(overlay).toHaveClass(/collapsed/);
-    await expect(page.locator('.digest-slide-handle')).toHaveText('◀');
+    await expect(page.locator('.summarizer-slide-handle')).toHaveText('◀');
 
     // Toggle back
     await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       overlay.classList.remove('collapsed');
-      const handle = document.querySelector('.digest-slide-handle');
+      const handle = document.querySelector('.summarizer-slide-handle');
       handle.textContent = '▶';
     });
 
@@ -327,7 +327,7 @@ test.describe('Overlay Positioning (Real Code)', () => {
     await injectUserscript(page);
 
     const badgeWidth = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       if (!overlay) return null;
       return overlay.offsetWidth;
     });
@@ -338,10 +338,10 @@ test.describe('Overlay Positioning (Real Code)', () => {
   test('badge docks at right edge with 0px gap', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     const position = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       if (!overlay) return null;
 
       const rect = overlay.getBoundingClientRect();
@@ -365,10 +365,10 @@ test.describe('Overlay Positioning (Real Code)', () => {
   test('default Y position is around 70% from top', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     const position = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       if (!overlay) return null;
 
       const rect = overlay.getBoundingClientRect();
@@ -414,10 +414,10 @@ test.describe('Overlay Positioning (Real Code)', () => {
 
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     const position = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       if (!overlay) return null;
 
       const rect = overlay.getBoundingClientRect();
@@ -445,31 +445,31 @@ test.describe('Overlay Positioning (Real Code)', () => {
   test('clicking slide handle toggles collapsed state', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     // Initially expanded
     let state = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       return overlay.classList.contains('collapsed');
     });
     expect(state).toBe(false);
 
     // Click to collapse
-    await page.click('.digest-slide-handle');
+    await page.click('.summarizer-slide-handle');
     await page.waitForTimeout(400);
 
     state = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       return overlay.classList.contains('collapsed');
     });
     expect(state).toBe(true);
 
     // Click to expand
-    await page.click('.digest-slide-handle');
+    await page.click('.summarizer-slide-handle');
     await page.waitForTimeout(400);
 
     state = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       return overlay.classList.contains('collapsed');
     });
     expect(state).toBe(false);
@@ -478,16 +478,16 @@ test.describe('Overlay Positioning (Real Code)', () => {
   test('expanded overlay returns to right edge after toggle', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     // Collapse then expand
-    await page.click('.digest-slide-handle');
+    await page.click('.summarizer-slide-handle');
     await page.waitForTimeout(400);
-    await page.click('.digest-slide-handle');
+    await page.click('.summarizer-slide-handle');
     await page.waitForTimeout(400);
 
     const position = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       const rect = overlay.getBoundingClientRect();
       const clientWidth = document.documentElement.clientWidth;
       return {
@@ -519,19 +519,18 @@ test.describe('Overlay Dragging (Real Code)', () => {
     await page.evaluate(gmMocks);
   });
 
-  test('dragging moves overlay to new position', async ({ page }) => {
+  test('dragging moves overlay vertically', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     // Get initial position and handle location
     const initialData = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
-      const handle = overlay.querySelector('.digest-handle');
+      const overlay = document.querySelector('.summarizer-overlay');
+      const handle = overlay.querySelector('.summarizer-handle');
       const overlayRect = overlay.getBoundingClientRect();
       const handleRect = handle.getBoundingClientRect();
       return {
-        overlayLeft: overlayRect.left,
         overlayTop: overlayRect.top,
         handleX: handleRect.left + handleRect.width / 2,
         handleY: handleRect.top + handleRect.height / 2
@@ -541,29 +540,28 @@ test.describe('Overlay Dragging (Real Code)', () => {
     // Use mouse events directly for more reliable dragging
     await page.mouse.move(initialData.handleX, initialData.handleY);
     await page.mouse.down();
-    await page.mouse.move(500, 300, { steps: 10 });
+    await page.mouse.move(initialData.handleX, 100, { steps: 10 }); // Move to Y=100
     await page.mouse.up();
 
     // Get new position
     const newPos = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       const rect = overlay.getBoundingClientRect();
-      return { left: rect.left, top: rect.top };
+      return { top: rect.top };
     });
 
-    // Position should have changed
-    expect(newPos.left).not.toBe(initialData.overlayLeft);
+    // Y position should have changed (overlay stays docked to right edge)
     expect(newPos.top).not.toBe(initialData.overlayTop);
   });
 
   test('dragging is constrained to viewport bounds', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     // Get handle location
     const handlePos = await page.evaluate(() => {
-      const handle = document.querySelector('.digest-handle');
+      const handle = document.querySelector('.summarizer-handle');
       const rect = handle.getBoundingClientRect();
       return {
         x: rect.left + rect.width / 2,
@@ -578,7 +576,7 @@ test.describe('Overlay Dragging (Real Code)', () => {
     await page.mouse.up();
 
     const position = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       const rect = overlay.getBoundingClientRect();
       return { left: rect.left, top: rect.top };
     });
@@ -607,10 +605,10 @@ test.describe('Overlay CSS (Real Code)', () => {
   test('injects style element with correct id', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     const styleExists = await page.evaluate(() => {
-      return !!document.getElementById('digest-style');
+      return !!document.getElementById('summarizer-style');
     });
 
     expect(styleExists).toBe(true);
@@ -619,10 +617,10 @@ test.describe('Overlay CSS (Real Code)', () => {
   test('overlay has fixed positioning', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     const position = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       const style = window.getComputedStyle(overlay);
       return style.position;
     });
@@ -633,10 +631,10 @@ test.describe('Overlay CSS (Real Code)', () => {
   test('overlay has high z-index', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     const zIndex = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       const style = window.getComputedStyle(overlay);
       return parseInt(style.zIndex, 10);
     });
@@ -647,10 +645,10 @@ test.describe('Overlay CSS (Real Code)', () => {
   test('overlay has data-digest-ui attribute', async ({ page }) => {
     await injectUserscript(page);
 
-    await page.waitForSelector('.digest-overlay', { timeout: 5000 });
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
     const hasAttr = await page.evaluate(() => {
-      const overlay = document.querySelector('.digest-overlay');
+      const overlay = document.querySelector('.summarizer-overlay');
       return overlay.hasAttribute('data-digest-ui');
     });
 

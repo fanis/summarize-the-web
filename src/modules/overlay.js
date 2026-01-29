@@ -74,9 +74,9 @@ function applyTheme(element, theme) {
     if (!element) return;
     currentTheme = theme;
     if (isDarkMode(theme)) {
-        element.classList.add('digest-dark');
+        element.classList.add('summarizer-dark');
     } else {
-        element.classList.remove('digest-dark');
+        element.classList.remove('summarizer-dark');
     }
 }
 
@@ -93,7 +93,7 @@ function updateAllThemes(theme) {
  */
 function syncBadgeSetting(setting, value) {
     if (!overlay) return;
-    const options = overlay.querySelectorAll(`[data-setting="${setting}"] .digest-settings-option`);
+    const options = overlay.querySelectorAll(`[data-setting="${setting}"] .summarizer-settings-option`);
     options.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.value === value);
     });
@@ -108,45 +108,47 @@ function viewportWidth() {
  * Ensure CSS is loaded
  */
 export function ensureCSS() {
-    if (document.getElementById('digest-style')) return;
+    if (document.getElementById('summarizer-style')) return;
     const style = document.createElement('style');
-    style.id = 'digest-style';
+    style.id = 'summarizer-style';
     style.textContent = `
-        .digest-overlay {
+        #summarizer-overlay-singleton.summarizer-overlay {
             position: fixed !important;
             z-index: 2147483646 !important;
             font: 13px/1.4 system-ui, sans-serif !important;
             color: #1a1a1a !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            border: 2px solid #5568d3 !important;
-            border-radius: 12px !important;
-            box-shadow: 0 8px 32px rgba(0,0,0,.3) !important;
+            border: 1px solid #5568d3 !important;
+            border-radius: 10px !important;
+            box-shadow: 0 6px 22px rgba(0,0,0,.18) !important;
             display: flex !important;
             flex-direction: column !important;
             box-sizing: border-box !important;
             width: 150px !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, border-radius 0.3s ease !important;
             user-select: none !important;
+            right: 0 !important;
+            transform: translateX(0) !important;
         }
-        .digest-overlay.collapsed {
-            right: -150px !important;
+        #summarizer-overlay-singleton.summarizer-overlay.collapsed {
+            transform: translateX(100%) !important;
             border-right: none !important;
-            border-radius: 12px 0 0 12px !important;
-            box-shadow: none !important;
+            border-radius: 10px 0 0 10px !important;
+            box-shadow: -4px 0 22px rgba(0,0,0,.18) !important;
         }
-        .digest-overlay.dragging {
+        #summarizer-overlay-singleton.summarizer-overlay.dragging {
             transition: none !important;
             cursor: grabbing !important;
         }
-        .digest-slide-handle {
+        #summarizer-overlay-singleton .summarizer-slide-handle {
             position: absolute !important;
-            left: -30px !important;
+            left: -28px !important;
             top: 50% !important;
             transform: translateY(-50%) !important;
             width: 28px !important;
             height: 56px !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            border: 2px solid #5568d3 !important;
+            border: 1px solid #5568d3 !important;
             border-right: none !important;
             border-radius: 8px 0 0 8px !important;
             cursor: pointer !important;
@@ -155,46 +157,53 @@ export function ensureCSS() {
             justify-content: center !important;
             font-size: 14px !important;
             color: #fff !important;
-            box-shadow: -3px 0 12px rgba(0,0,0,.2) !important;
-            transition: all 0.2s ease !important;
+            box-shadow: -3px 0 12px rgba(0,0,0,.12) !important;
+            transition: width 0.2s ease, left 0.2s ease, box-shadow 0.2s ease !important;
         }
-        .digest-slide-handle:hover {
-            left: -32px !important;
-            box-shadow: -4px 0 16px rgba(0,0,0,.3) !important;
+        #summarizer-overlay-singleton .summarizer-slide-handle:hover {
+            width: 30px !important;
+            left: -30px !important;
+            box-shadow: -4px 0 16px rgba(0,0,0,.18) !important;
         }
-        .digest-handle {
+        #summarizer-overlay-singleton .summarizer-handle {
             background: rgba(255,255,255,0.2) !important;
             padding: 10px 12px !important;
             cursor: grab !important;
-            border-radius: 10px 10px 0 0 !important;
+            border-radius: 9px 9px 0 0 !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             border-bottom: 1px solid rgba(255,255,255,0.3) !important;
         }
-        .digest-handle:active {
+        #summarizer-overlay-singleton.collapsed .summarizer-handle {
+            border-radius: 9px 0 0 0 !important;
+        }
+        #summarizer-overlay-singleton .summarizer-handle:active {
             cursor: grabbing !important;
         }
-        .digest-title {
+        #summarizer-overlay-singleton .summarizer-title {
             font-weight: 600 !important;
             font-size: 14px !important;
             color: #fff !important;
             margin: 0 !important;
             text-align: center !important;
         }
-        .digest-content {
+        #summarizer-overlay-singleton .summarizer-content {
             padding: 12px !important;
             display: flex !important;
             flex-direction: column !important;
             gap: 8px !important;
             background: rgba(255,255,255,0.95) !important;
-            border-radius: 0 0 0 10px !important;
+            border-radius: 0 0 9px 9px !important;
         }
-        .digest-section {
+        #summarizer-overlay-singleton.collapsed .summarizer-content {
+            border-radius: 0 0 0 9px !important;
+        }
+        #summarizer-overlay-singleton .summarizer-section {
             margin: 0 !important;
             padding: 0 !important;
         }
-        .digest-section-title {
+        #summarizer-overlay-singleton .summarizer-section-title {
             font-size: 11px !important;
             font-weight: 600 !important;
             color: #667eea !important;
@@ -202,12 +211,12 @@ export function ensureCSS() {
             text-transform: uppercase !important;
             letter-spacing: 0.5px !important;
         }
-        .digest-buttons {
+        #summarizer-overlay-singleton .summarizer-buttons {
             display: flex !important;
             gap: 6px !important;
             flex-wrap: wrap !important;
         }
-        .digest-btn {
+        #summarizer-overlay-singleton .summarizer-btn {
             flex: 1 !important;
             min-width: 0 !important;
             padding: 8px 4px !important;
@@ -221,26 +230,26 @@ export function ensureCSS() {
             transition: all 0.2s !important;
             white-space: nowrap !important;
         }
-        .digest-btn:hover {
+        #summarizer-overlay-singleton .summarizer-btn:hover {
             background: #667eea !important;
             color: #fff !important;
         }
-        .digest-btn:disabled {
+        #summarizer-overlay-singleton .summarizer-btn:disabled {
             opacity: 0.5 !important;
             cursor: not-allowed !important;
         }
-        .digest-btn.active {
+        #summarizer-overlay-singleton .summarizer-btn.active {
             background: #667eea !important;
             color: #fff !important;
             font-weight: 600 !important;
         }
-        .digest-footer {
+        #summarizer-overlay-singleton .summarizer-footer {
             display: flex !important;
             align-items: center !important;
             justify-content: space-between !important;
             gap: 8px !important;
         }
-        .digest-status {
+        #summarizer-overlay-singleton .summarizer-status {
             font-size: 10px !important;
             color: #666 !important;
             margin: 0 !important;
@@ -249,10 +258,10 @@ export function ensureCSS() {
             text-overflow: ellipsis !important;
             white-space: nowrap !important;
         }
-        .digest-badge-settings {
+        #summarizer-overlay-singleton .summarizer-badge-settings {
             position: relative !important;
         }
-        .digest-badge-settings .digest-settings-btn {
+        #summarizer-overlay-singleton .summarizer-badge-settings .summarizer-settings-btn {
             min-width: 24px !important;
             width: 24px !important;
             height: 24px !important;
@@ -260,13 +269,14 @@ export function ensureCSS() {
             padding: 4px !important;
             font-size: 12px !important;
         }
-        .digest-badge-settings .digest-settings-popover {
+        #summarizer-overlay-singleton .summarizer-badge-settings .summarizer-settings-popover {
             right: 0 !important;
             bottom: 28px !important;
             top: auto !important;
             min-width: 160px !important;
         }
-        .digest-badge-settings .inspect-btn {
+        #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
+        #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
             width: 100% !important;
             margin-top: 8px !important;
             padding-top: 8px !important;
@@ -277,10 +287,16 @@ export function ensureCSS() {
             border-bottom: none !important;
             background: transparent !important;
         }
-        .digest-badge-settings .inspect-btn:hover {
+        #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
+            margin-top: 4px !important;
+            padding-top: 8px !important;
+            border-top: none !important;
+        }
+        #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn:hover,
+        #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn:hover {
             background: #f3f4f6 !important;
         }
-        .digest-branding {
+        #summarizer-overlay-singleton .summarizer-branding {
             font-size: 8px !important;
             color: rgba(255,255,255,0.6) !important;
             text-align: center !important;
@@ -290,7 +306,7 @@ export function ensureCSS() {
         }
 
         /* Summary Overlay Styles */
-        .digest-summary-overlay {
+        .summarizer-summary-overlay {
             position: fixed !important;
             top: 12px !important;
             left: 50% !important;
@@ -303,10 +319,10 @@ export function ensureCSS() {
             max-width: 760px !important;
             max-height: 90vh !important;
             box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35), 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
-            animation: digest-summary-fadein 0.3s ease !important;
+            animation: summarizer-summary-fadein 0.3s ease !important;
         }
 
-        @keyframes digest-summary-fadein {
+        @keyframes summarizer-summary-fadein {
             from {
                 opacity: 0;
                 transform: translateX(-50%) translateY(-20px);
@@ -317,12 +333,12 @@ export function ensureCSS() {
             }
         }
 
-        .digest-summary-container {
+        .summarizer-summary-container {
             padding: 0 !important;
             box-sizing: border-box !important;
         }
 
-        .digest-summary-header {
+        .summarizer-summary-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             padding: 16px 20px !important;
             border-radius: 13px 13px 0 0 !important;
@@ -331,7 +347,7 @@ export function ensureCSS() {
             justify-content: space-between !important;
         }
 
-        .digest-summary-badge {
+        .summarizer-summary-badge {
             font: 600 16px/1.2 system-ui, sans-serif !important;
             color: #fff !important;
             display: flex !important;
@@ -339,7 +355,7 @@ export function ensureCSS() {
             gap: 8px !important;
         }
 
-        .digest-summary-close {
+        .summarizer-summary-close {
             background: rgba(255, 255, 255, 0.2) !important;
             border: 1px solid rgba(255, 255, 255, 0.3) !important;
             color: #fff !important;
@@ -357,36 +373,36 @@ export function ensureCSS() {
             line-height: 1 !important;
         }
 
-        .digest-summary-close:hover {
+        .summarizer-summary-close:hover {
             background: rgba(255, 255, 255, 0.3) !important;
             transform: scale(1.05) !important;
         }
 
-        .digest-summary-content {
+        .summarizer-summary-content {
             padding: 28px 40px !important;
-            font: var(--digest-font-size, 17px)/var(--digest-line-height, 1.8) system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+            font: var(--summarizer-font-size, 17px)/var(--summarizer-line-height, 1.8) system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
             color: #2d3748 !important;
             max-height: calc(90vh - 180px) !important;
             overflow-y: auto !important;
         }
 
-        .digest-summary-content-inner {
+        .summarizer-summary-content-inner {
             max-width: 680px !important;
             margin: 0 auto !important;
         }
 
-        .digest-summary-content p {
+        .summarizer-summary-content p {
             margin: 0 0 1.25em 0 !important;
             text-align: left !important;
             word-spacing: 0.05em !important;
             letter-spacing: 0.01em !important;
         }
 
-        .digest-summary-content p:last-child {
+        .summarizer-summary-content p:last-child {
             margin-bottom: 0 !important;
         }
 
-        .digest-summary-footer {
+        .summarizer-summary-footer {
             padding: 16px 20px !important;
             background: rgba(102, 126, 234, 0.05) !important;
             border-top: 1px solid rgba(102, 126, 234, 0.15) !important;
@@ -397,14 +413,14 @@ export function ensureCSS() {
             gap: 8px !important;
         }
 
-        .digest-summary-footer-text {
+        .summarizer-summary-footer-text {
             font: 400 11px/1.2 system-ui, sans-serif !important;
             color: #999 !important;
             letter-spacing: 0.3px !important;
         }
 
-        .digest-summary-restore,
-        .digest-summary-close-btn {
+        .summarizer-summary-restore,
+        .summarizer-summary-close-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: #fff !important;
             border: none !important;
@@ -416,23 +432,23 @@ export function ensureCSS() {
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
         }
 
-        .digest-summary-restore:hover,
-        .digest-summary-close-btn:hover {
+        .summarizer-summary-restore:hover,
+        .summarizer-summary-close-btn:hover {
             transform: translateY(-2px) !important;
             box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4) !important;
         }
 
-        .digest-summary-header-controls {
+        .summarizer-summary-header-controls {
             display: flex !important;
             align-items: center !important;
             gap: 8px !important;
         }
 
-        .digest-summary-settings {
+        .summarizer-summary-settings {
             position: relative !important;
         }
 
-        .digest-summary-settings-btn {
+        .summarizer-summary-settings-btn {
             background: rgba(255, 255, 255, 0.2) !important;
             border: 1px solid rgba(255, 255, 255, 0.3) !important;
             color: #fff !important;
@@ -449,17 +465,74 @@ export function ensureCSS() {
             line-height: 1 !important;
         }
 
-        .digest-summary-settings-btn:hover {
+        .summarizer-summary-settings-btn:hover {
             background: rgba(255, 255, 255, 0.3) !important;
         }
 
-        .digest-summary-popover {
+        .summarizer-summary-popover {
+            position: absolute !important;
             top: 40px !important;
             right: 0 !important;
             min-width: 180px !important;
+            background: #fff !important;
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 10px !important;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
+            padding: 16px !important;
+            z-index: 10 !important;
+            display: none !important;
         }
 
-        .digest-settings-popover {
+        .summarizer-summary-popover.open {
+            display: block !important;
+        }
+
+        .summarizer-summary-overlay .summarizer-settings-group {
+            margin-bottom: 14px !important;
+        }
+
+        .summarizer-summary-overlay .summarizer-settings-group:last-child {
+            margin-bottom: 0 !important;
+        }
+
+        .summarizer-summary-overlay .summarizer-settings-label {
+            font: 600 11px/1.2 system-ui, sans-serif !important;
+            color: #667eea !important;
+            margin: 0 0 8px 0 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+        }
+
+        .summarizer-summary-overlay .summarizer-settings-options {
+            display: flex !important;
+            gap: 4px !important;
+        }
+
+        .summarizer-summary-overlay .summarizer-settings-option {
+            flex: 1 !important;
+            padding: 6px 8px !important;
+            border: 1px solid #ddd !important;
+            background: #fff !important;
+            color: #666 !important;
+            border-radius: 6px !important;
+            cursor: pointer !important;
+            font: 500 12px/1.2 system-ui, sans-serif !important;
+            text-align: center !important;
+            transition: all 0.15s !important;
+        }
+
+        .summarizer-summary-overlay .summarizer-settings-option:hover {
+            border-color: #667eea !important;
+            color: #667eea !important;
+        }
+
+        .summarizer-summary-overlay .summarizer-settings-option.active {
+            background: #667eea !important;
+            border-color: #667eea !important;
+            color: #fff !important;
+        }
+
+        #summarizer-overlay-singleton .summarizer-settings-popover {
             position: absolute !important;
             top: 40px !important;
             right: 0 !important;
@@ -473,19 +546,19 @@ export function ensureCSS() {
             display: none !important;
         }
 
-        .digest-settings-popover.open {
+        #summarizer-overlay-singleton .summarizer-settings-popover.open {
             display: block !important;
         }
 
-        .digest-settings-group {
+        #summarizer-overlay-singleton .summarizer-settings-group {
             margin-bottom: 14px !important;
         }
 
-        .digest-settings-group:last-child {
+        #summarizer-overlay-singleton .summarizer-settings-group:last-child {
             margin-bottom: 0 !important;
         }
 
-        .digest-settings-label {
+        #summarizer-overlay-singleton .summarizer-settings-label {
             font: 600 11px/1.2 system-ui, sans-serif !important;
             color: #667eea !important;
             margin: 0 0 8px 0 !important;
@@ -493,12 +566,12 @@ export function ensureCSS() {
             letter-spacing: 0.5px !important;
         }
 
-        .digest-settings-options {
+        #summarizer-overlay-singleton .summarizer-settings-options {
             display: flex !important;
             gap: 4px !important;
         }
 
-        .digest-settings-option {
+        #summarizer-overlay-singleton .summarizer-settings-option {
             flex: 1 !important;
             padding: 6px 8px !important;
             border: 1px solid #ddd !important;
@@ -511,32 +584,32 @@ export function ensureCSS() {
             transition: all 0.15s !important;
         }
 
-        .digest-settings-option:hover {
+        #summarizer-overlay-singleton .summarizer-settings-option:hover {
             border-color: #667eea !important;
             color: #667eea !important;
         }
 
-        .digest-settings-option.active {
+        #summarizer-overlay-singleton .summarizer-settings-option.active {
             background: #667eea !important;
             border-color: #667eea !important;
             color: #fff !important;
         }
 
-        .digest-shortcut-row {
+        #summarizer-overlay-singleton .summarizer-shortcut-row {
             display: flex !important;
             align-items: center !important;
             gap: 8px !important;
             margin-bottom: 6px !important;
         }
-        .digest-shortcut-row:last-child {
+        #summarizer-overlay-singleton .summarizer-shortcut-row:last-child {
             margin-bottom: 0 !important;
         }
-        .digest-shortcut-label {
+        #summarizer-overlay-singleton .summarizer-shortcut-label {
             font: 500 11px/1.2 system-ui, sans-serif !important;
             color: #666 !important;
             min-width: 40px !important;
         }
-        .digest-shortcut-input {
+        #summarizer-overlay-singleton .summarizer-shortcut-input {
             flex: 1 !important;
             padding: 4px 8px !important;
             border: 1px solid #ddd !important;
@@ -547,122 +620,167 @@ export function ensureCSS() {
             background: #fff !important;
             color: #333 !important;
         }
-        .digest-shortcut-input:focus {
+        #summarizer-overlay-singleton .summarizer-shortcut-input:focus {
             outline: none !important;
             border-color: #667eea !important;
             background: #f0f4ff !important;
         }
-        .digest-shortcut-input.recording {
+        #summarizer-overlay-singleton .summarizer-shortcut-input.recording {
             border-color: #f59e0b !important;
             background: #fffbeb !important;
-            animation: digest-pulse 1s infinite !important;
+            animation: summarizer-pulse 1s infinite !important;
         }
-        @keyframes digest-pulse {
+        @keyframes summarizer-pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
         }
 
         /* Dark mode for shortcuts */
-        .digest-dark .digest-shortcut-label {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-shortcut-label {
             color: #9ca3af !important;
         }
-        .digest-dark .digest-shortcut-input {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-shortcut-input {
             background: #374151 !important;
             border-color: #4b5563 !important;
             color: #e5e7eb !important;
         }
-        .digest-dark .digest-shortcut-input:focus {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-shortcut-input:focus {
             border-color: #6366f1 !important;
             background: #1e1b4b !important;
         }
 
         /* Dark mode styles */
-        .digest-overlay.digest-dark {
+        #summarizer-overlay-singleton.summarizer-overlay.summarizer-dark {
             background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
             border-color: #4338ca !important;
         }
-        .digest-dark .digest-slide-handle {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-slide-handle {
             background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
             border-color: #4338ca !important;
         }
-        .digest-dark .digest-content {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-content {
             background: rgba(30, 27, 75, 0.95) !important;
         }
-        .digest-dark .digest-btn {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-btn {
             background: #1e1b4b !important;
             border-color: #6366f1 !important;
             color: #a5b4fc !important;
         }
-        .digest-dark .digest-btn:hover {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-btn:hover {
             background: #6366f1 !important;
             color: #fff !important;
         }
-        .digest-dark .digest-btn.active {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-btn.active {
             background: #6366f1 !important;
             color: #fff !important;
         }
-        .digest-dark .digest-status {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-status {
             color: #9ca3af !important;
         }
-        .digest-dark .digest-badge-settings .inspect-btn {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn,
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn {
             border-top-color: #374151 !important;
             color: #d1d5db !important;
         }
-        .digest-dark .digest-badge-settings .inspect-btn:hover {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn:hover,
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn:hover {
             background: #374151 !important;
         }
-        .digest-dark .digest-settings-popover {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-popover {
             background: #1f2937 !important;
             border-color: #374151 !important;
         }
-        .digest-dark .digest-settings-label {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-label {
             color: #a5b4fc !important;
         }
-        .digest-dark .digest-settings-option {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-option {
             background: #374151 !important;
             border-color: #4b5563 !important;
             color: #d1d5db !important;
         }
-        .digest-dark .digest-settings-option:hover {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-option:hover {
             border-color: #6366f1 !important;
             color: #a5b4fc !important;
         }
-        .digest-dark .digest-settings-option.active {
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-option.active {
             background: #6366f1 !important;
             border-color: #6366f1 !important;
             color: #fff !important;
         }
 
         /* Dark mode for summary overlay */
-        .digest-summary-overlay.digest-dark {
+        .summarizer-summary-overlay.summarizer-dark {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
             border-color: #4338ca !important;
         }
-        .digest-summary-overlay.digest-dark .digest-summary-header {
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-header {
             background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
         }
-        .digest-summary-overlay.digest-dark .digest-summary-content {
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-content {
             color: #e5e7eb !important;
         }
-        .digest-summary-overlay.digest-dark .digest-summary-footer {
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer {
             background: rgba(30, 27, 75, 0.3) !important;
             border-top-color: rgba(99, 102, 241, 0.3) !important;
         }
-        .digest-summary-overlay.digest-dark .digest-summary-footer-text {
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer-text {
             color: #6b7280 !important;
         }
-        .digest-summary-overlay.digest-dark .digest-summary-close-btn {
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-close-btn {
             background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%) !important;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-popover {
+            background: #1f2937 !important;
+            border-color: #374151 !important;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-label {
+            color: #a5b4fc !important;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option {
+            background: #374151 !important;
+            border-color: #4b5563 !important;
+            color: #d1d5db !important;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option:hover {
+            border-color: #6366f1 !important;
+            color: #a5b4fc !important;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option.active {
+            background: #6366f1 !important;
+            border-color: #6366f1 !important;
+            color: #fff !important;
         }
     `;
     document.head.appendChild(style);
 }
 
+const OVERLAY_ID = 'summarizer-overlay-singleton';
+
+const CREATION_LOCK_ATTR = 'data-summarizer-creating';
+
 /**
  * Create the main overlay
  */
-export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect) {
+export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight) {
+    // Check for existing overlays (can be duplicates if script runs multiple times)
+    const existingOverlays = document.querySelectorAll(`#${OVERLAY_ID}`);
+
+    if (existingOverlays.length > 1) {
+        // Multiple overlays exist - remove all and recreate
+        existingOverlays.forEach(el => el.remove());
+        overlay = null;
+    } else if (existingOverlays.length === 1) {
+        // Single overlay exists - reuse it
+        overlay = existingOverlays[0];
+        return overlay;
+    }
+
+    // Also check module variable
     if (overlay && overlay.isConnected) return overlay;
+
+    // DOM-based lock to prevent race conditions across script contexts
+    if (document.body.hasAttribute(CREATION_LOCK_ATTR)) return null;
+    document.body.setAttribute(CREATION_LOCK_ATTR, 'true');
 
     ensureCSS();
 
@@ -678,78 +796,75 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     shortcuts.small = savedShortcutSmall ? parseShortcut(savedShortcutSmall) : DEFAULT_SHORTCUTS.small;
 
     overlay = document.createElement('div');
-    overlay.className = OVERLAY_COLLAPSED.value ? 'digest-overlay collapsed' : 'digest-overlay';
+    overlay.id = OVERLAY_ID;
+    overlay.className = OVERLAY_COLLAPSED.value ? 'summarizer-overlay collapsed' : 'summarizer-overlay';
     overlay.setAttribute(UI_ATTR, '');
 
     // Apply theme
     applyTheme(overlay, savedTheme);
 
-    // Set initial position
-    const maxX = viewportWidth() - BADGE_WIDTH;
+    // Set initial position - always anchored to right edge
     const maxY = window.innerHeight - 200;
-    OVERLAY_POS.x = Math.max(0, Math.min(OVERLAY_POS.x, maxX));
     OVERLAY_POS.y = Math.max(0, Math.min(OVERLAY_POS.y, maxY));
 
     overlay.style.top = `${OVERLAY_POS.y}px`;
-
-    if (!OVERLAY_COLLAPSED.value) {
-        overlay.style.left = `${OVERLAY_POS.x}px`;
-    }
+    overlay.style.right = '0px';
 
     overlay.innerHTML = `
-        <div class="digest-slide-handle" title="${OVERLAY_COLLAPSED.value ? 'Open' : 'Close'}">
+        <div class="summarizer-slide-handle" title="${OVERLAY_COLLAPSED.value ? 'Open' : 'Close'}">
             ${OVERLAY_COLLAPSED.value ? '◀' : '▶'}
         </div>
-        <div class="digest-handle">
-            <div class="digest-title">Summarize</div>
-            <div class="digest-branding">The Web</div>
+        <div class="summarizer-handle">
+            <div class="summarizer-title">Summarize</div>
+            <div class="summarizer-branding">The Web</div>
         </div>
-        <div class="digest-content">
-            <div class="digest-buttons">
-                <button class="digest-btn" data-size="large" title="${formatShortcut(shortcuts.large)}">Large</button>
-                <button class="digest-btn" data-size="small" title="${formatShortcut(shortcuts.small)}">Small</button>
+        <div class="summarizer-content">
+            <div class="summarizer-buttons">
+                <button class="summarizer-btn" data-size="large" title="${formatShortcut(shortcuts.large)}">Large</button>
+                <button class="summarizer-btn" data-size="small" title="${formatShortcut(shortcuts.small)}">Small</button>
             </div>
-            <div class="digest-footer">
-                <div class="digest-status">Ready</div>
-                <div class="digest-badge-settings">
-                    <button class="digest-btn digest-settings-btn" title="Display settings">&#9881;</button>
-                    <div class="digest-settings-popover">
-                        <div class="digest-settings-group">
-                            <div class="digest-settings-label">Font Size</div>
-                            <div class="digest-settings-options" data-setting="fontSize">
-                                <button class="digest-settings-option${savedFontSize === 'small' ? ' active' : ''}" data-value="small">S</button>
-                                <button class="digest-settings-option${savedFontSize === 'default' ? ' active' : ''}" data-value="default">M</button>
-                                <button class="digest-settings-option${savedFontSize === 'large' ? ' active' : ''}" data-value="large">L</button>
+            <div class="summarizer-footer">
+                <div class="summarizer-status">Ready</div>
+                <div class="summarizer-badge-settings">
+                    <button class="summarizer-btn summarizer-settings-btn" title="Display settings">&#9881;</button>
+                    <div class="summarizer-settings-popover">
+                        <div class="summarizer-settings-group">
+                            <div class="summarizer-settings-label">Font Size</div>
+                            <div class="summarizer-settings-options" data-setting="fontSize">
+                                <button class="summarizer-settings-option${savedFontSize === 'small' ? ' active' : ''}" data-value="small">S</button>
+                                <button class="summarizer-settings-option${savedFontSize === 'default' ? ' active' : ''}" data-value="default">M</button>
+                                <button class="summarizer-settings-option${savedFontSize === 'large' ? ' active' : ''}" data-value="large">L</button>
                             </div>
                         </div>
-                        <div class="digest-settings-group">
-                            <div class="digest-settings-label">Spacing</div>
-                            <div class="digest-settings-options" data-setting="lineHeight">
-                                <button class="digest-settings-option${savedLineHeight === 'compact' ? ' active' : ''}" data-value="compact">-</button>
-                                <button class="digest-settings-option${savedLineHeight === 'default' ? ' active' : ''}" data-value="default">=</button>
-                                <button class="digest-settings-option${savedLineHeight === 'comfortable' ? ' active' : ''}" data-value="comfortable">+</button>
+                        <div class="summarizer-settings-group">
+                            <div class="summarizer-settings-label">Spacing</div>
+                            <div class="summarizer-settings-options" data-setting="lineHeight">
+                                <button class="summarizer-settings-option${savedLineHeight === 'compact' ? ' active' : ''}" data-value="compact">-</button>
+                                <button class="summarizer-settings-option${savedLineHeight === 'default' ? ' active' : ''}" data-value="default">=</button>
+                                <button class="summarizer-settings-option${savedLineHeight === 'comfortable' ? ' active' : ''}" data-value="comfortable">+</button>
                             </div>
                         </div>
-                        <div class="digest-settings-group">
-                            <div class="digest-settings-label">Theme</div>
-                            <div class="digest-settings-options" data-setting="theme">
-                                <button class="digest-settings-option${savedTheme === 'light' ? ' active' : ''}" data-value="light">Light</button>
-                                <button class="digest-settings-option${savedTheme === 'dark' ? ' active' : ''}" data-value="dark">Dark</button>
-                                <button class="digest-settings-option${savedTheme === 'auto' ? ' active' : ''}" data-value="auto">Auto</button>
+                        <div class="summarizer-settings-group">
+                            <div class="summarizer-settings-label">Theme</div>
+                            <div class="summarizer-settings-options" data-setting="theme">
+                                <button class="summarizer-settings-option${savedTheme === 'light' ? ' active' : ''}" data-value="light">Light</button>
+                                <button class="summarizer-settings-option${savedTheme === 'dark' ? ' active' : ''}" data-value="dark">Dark</button>
+                                <button class="summarizer-settings-option${savedTheme === 'auto' ? ' active' : ''}" data-value="auto">Auto</button>
                             </div>
                         </div>
-                        <div class="digest-settings-group">
-                            <div class="digest-settings-label">Shortcuts</div>
-                            <div class="digest-shortcut-row">
-                                <span class="digest-shortcut-label">Large:</span>
-                                <input type="text" class="digest-shortcut-input" data-shortcut="large" value="${formatShortcut(shortcuts.large)}" readonly placeholder="Click to set">
+                        <div class="summarizer-settings-group">
+                            <div class="summarizer-settings-label">Shortcuts</div>
+                            <div class="summarizer-shortcut-row">
+                                <span class="summarizer-shortcut-label">Large:</span>
+                                <input type="text" class="summarizer-shortcut-input" data-shortcut="large" value="${formatShortcut(shortcuts.large)}" readonly placeholder="Click to set">
                             </div>
-                            <div class="digest-shortcut-row">
-                                <span class="digest-shortcut-label">Small:</span>
-                                <input type="text" class="digest-shortcut-input" data-shortcut="small" value="${formatShortcut(shortcuts.small)}" readonly placeholder="Click to set">
+                            <div class="summarizer-shortcut-row">
+                                <span class="summarizer-shortcut-label">Small:</span>
+                                <input type="text" class="summarizer-shortcut-input" data-shortcut="small" value="${formatShortcut(shortcuts.small)}" readonly placeholder="Click to set">
                             </div>
                         </div>
-                        <button class="digest-btn inspect-btn">Inspect Elements</button>
+                        <button class="summarizer-btn inspect-btn">Inspect Elements</button>
+                        <button class="summarizer-btn highlight-btn">Show Included Elements</button>
                     </div>
                 </div>
             </div>
@@ -759,16 +874,16 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     document.body.appendChild(overlay);
 
     // Attach event listeners
-    const slideHandle = overlay.querySelector('.digest-slide-handle');
-    const dragHandle = overlay.querySelector('.digest-handle');
-    const digestBtns = overlay.querySelectorAll('.digest-btn[data-size]');
+    const slideHandle = overlay.querySelector('.summarizer-slide-handle');
+    const dragHandle = overlay.querySelector('.summarizer-handle');
+    const digestBtns = overlay.querySelectorAll('.summarizer-btn[data-size]');
     const inspectBtn = overlay.querySelector('.inspect-btn');
-    const settingsPopover = overlay.querySelector('.digest-settings-popover');
-    const settingsBtn = overlay.querySelector('.digest-settings-btn');
+    const settingsPopover = overlay.querySelector('.summarizer-settings-popover');
+    const settingsBtn = overlay.querySelector('.summarizer-settings-btn');
 
     slideHandle.addEventListener('click', (e) => {
         // Close settings popover when collapsing badge
-        settingsPopover.classList.remove('open');
+        settingsPopover?.classList.remove('open');
         toggleSlide(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage);
     });
     dragHandle.addEventListener('mousedown', (e) => startDrag(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage));
@@ -781,7 +896,16 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
         });
     });
 
-    inspectBtn.addEventListener('click', onInspect);
+    inspectBtn.addEventListener('click', () => {
+        settingsPopover?.classList.remove('open');
+        onInspect();
+    });
+
+    const highlightBtn = overlay.querySelector('.highlight-btn');
+    highlightBtn.addEventListener('click', () => {
+        settingsPopover?.classList.remove('open');
+        onSummaryHighlight?.();
+    });
 
     // Badge settings popover
 
@@ -792,13 +916,13 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
 
     // Close popover when clicking outside
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.digest-badge-settings')) {
+        if (!e.target.closest('.summarizer-badge-settings')) {
             settingsPopover.classList.remove('open');
         }
     });
 
     // Handle font size changes
-    const fontSizeOptions = overlay.querySelectorAll('[data-setting="fontSize"] .digest-settings-option');
+    const fontSizeOptions = overlay.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
     fontSizeOptions.forEach(btn => {
         btn.addEventListener('click', () => {
             const value = btn.dataset.value;
@@ -807,13 +931,13 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
             storage.set(STORAGE_KEYS.SUMMARY_FONT_SIZE, value);
             // Apply live to open summary
             if (summaryOverlay && summaryOverlay.isConnected) {
-                summaryOverlay.style.setProperty('--digest-font-size', `${SUMMARY_FONT_SIZES[value]}px`);
+                summaryOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[value]}px`);
             }
         });
     });
 
     // Handle line height changes
-    const lineHeightOptions = overlay.querySelectorAll('[data-setting="lineHeight"] .digest-settings-option');
+    const lineHeightOptions = overlay.querySelectorAll('[data-setting="lineHeight"] .summarizer-settings-option');
     lineHeightOptions.forEach(btn => {
         btn.addEventListener('click', () => {
             const value = btn.dataset.value;
@@ -822,13 +946,13 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
             storage.set(STORAGE_KEYS.SUMMARY_LINE_HEIGHT, value);
             // Apply live to open summary
             if (summaryOverlay && summaryOverlay.isConnected) {
-                summaryOverlay.style.setProperty('--digest-line-height', SUMMARY_LINE_HEIGHTS[value]);
+                summaryOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[value]);
             }
         });
     });
 
     // Handle theme changes
-    const themeOptions = overlay.querySelectorAll('[data-setting="theme"] .digest-settings-option');
+    const themeOptions = overlay.querySelectorAll('[data-setting="theme"] .summarizer-settings-option');
     themeOptions.forEach(btn => {
         btn.addEventListener('click', () => {
             const value = btn.dataset.value;
@@ -855,7 +979,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     }
 
     // Handle shortcut recording
-    const shortcutInputs = overlay.querySelectorAll('.digest-shortcut-input');
+    const shortcutInputs = overlay.querySelectorAll('.summarizer-shortcut-input');
     shortcutInputs.forEach(input => {
         input.addEventListener('click', () => {
             input.classList.add('recording');
@@ -926,6 +1050,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     };
     document.addEventListener('keydown', keyboardHandler);
 
+    document.body.removeAttribute(CREATION_LOCK_ATTR);
     return overlay;
 }
 
@@ -941,27 +1066,23 @@ async function toggleSlide(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage) {
     OVERLAY_COLLAPSED.value = !OVERLAY_COLLAPSED.value;
     await storage.set(STORAGE_KEYS.OVERLAY_COLLAPSED, String(OVERLAY_COLLAPSED.value));
 
+    const currentY = parseInt(overlay.style.top) || OVERLAY_POS.y;
+
     if (OVERLAY_COLLAPSED.value) {
         overlay.classList.add('collapsed');
-        overlay.style.left = '';
-        overlay.style.right = '';
-        overlay.style.transform = '';
     } else {
         overlay.classList.remove('collapsed');
-        const currentY = parseInt(overlay.style.top) || OVERLAY_POS.y;
-        const rightEdgeX = viewportWidth() - BADGE_WIDTH;
-
-        overlay.style.right = '';
-        overlay.style.transform = '';
-        overlay.style.left = `${rightEdgeX}px`;
-        overlay.style.top = `${currentY}px`;
-
-        OVERLAY_POS.x = rightEdgeX;
-        OVERLAY_POS.y = currentY;
-        storage.set(STORAGE_KEYS.OVERLAY_POS, JSON.stringify(OVERLAY_POS));
     }
 
-    const handle = overlay.querySelector('.digest-slide-handle');
+    // Always position from the right, use transform for collapse
+    overlay.style.left = '';
+    overlay.style.right = '0px';
+    overlay.style.top = `${currentY}px`;
+
+    OVERLAY_POS.y = currentY;
+    storage.set(STORAGE_KEYS.OVERLAY_POS, JSON.stringify(OVERLAY_POS));
+
+    const handle = overlay.querySelector('.summarizer-slide-handle');
     if (handle) {
         handle.textContent = OVERLAY_COLLAPSED.value ? '◀' : '▶';
         handle.title = OVERLAY_COLLAPSED.value ? 'Open' : 'Close';
@@ -986,21 +1107,15 @@ function startDrag(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage) {
     const onDrag = (e) => {
         if (!isDragging) return;
 
-        const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
         const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
 
-        let newX = clientX - dragOffset.x;
         let newY = clientY - dragOffset.y;
 
-        const maxX = viewportWidth() - overlay.offsetWidth;
         const maxY = window.innerHeight - overlay.offsetHeight;
-        newX = Math.max(0, Math.min(newX, maxX));
         newY = Math.max(0, Math.min(newY, maxY));
 
-        overlay.style.left = `${newX}px`;
         overlay.style.top = `${newY}px`;
 
-        OVERLAY_POS.x = newX;
         OVERLAY_POS.y = newY;
 
         e.preventDefault();
@@ -1034,8 +1149,8 @@ function startDrag(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage) {
 export function updateOverlayStatus(status, mode = null, fromCache = false) {
     if (!overlay) return;
 
-    const statusEl = overlay.querySelector('.digest-status');
-    const digestBtns = overlay.querySelectorAll('.digest-btn[data-size]');
+    const statusEl = overlay.querySelector('.summarizer-status');
+    const digestBtns = overlay.querySelectorAll('.summarizer-btn[data-size]');
 
     digestBtns.forEach(btn => btn.classList.remove('active'));
 
@@ -1076,12 +1191,12 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     const savedLineHeight = await storage.get(STORAGE_KEYS.SUMMARY_LINE_HEIGHT) || 'default';
 
     summaryOverlay = document.createElement('div');
-    summaryOverlay.className = 'digest-summary-overlay';
+    summaryOverlay.className = 'summarizer-summary-overlay';
     summaryOverlay.setAttribute(UI_ATTR, '');
 
     // Apply CSS custom properties
-    summaryOverlay.style.setProperty('--digest-font-size', `${SUMMARY_FONT_SIZES[savedFontSize]}px`);
-    summaryOverlay.style.setProperty('--digest-line-height', SUMMARY_LINE_HEIGHTS[savedLineHeight]);
+    summaryOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[savedFontSize]}px`);
+    summaryOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[savedLineHeight]);
 
     // Apply theme
     applyTheme(summaryOverlay, currentTheme);
@@ -1090,58 +1205,58 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     const isSelectedText = !container;
 
     summaryOverlay.innerHTML = `
-        <div class="digest-summary-container">
-            <div class="digest-summary-header">
-                <div class="digest-summary-badge">${escapeHtml(sizeLabel)} Summary${isSelectedText ? ' (Selected Text)' : ''}</div>
-                <div class="digest-summary-header-controls">
-                    <div class="digest-summary-settings">
-                        <button class="digest-summary-settings-btn" title="Display settings">&#9881;</button>
-                        <div class="digest-settings-popover digest-summary-popover">
-                            <div class="digest-settings-group">
-                                <div class="digest-settings-label">Font Size</div>
-                                <div class="digest-settings-options" data-setting="fontSize">
-                                    <button class="digest-settings-option${savedFontSize === 'small' ? ' active' : ''}" data-value="small">S</button>
-                                    <button class="digest-settings-option${savedFontSize === 'default' ? ' active' : ''}" data-value="default">M</button>
-                                    <button class="digest-settings-option${savedFontSize === 'large' ? ' active' : ''}" data-value="large">L</button>
+        <div class="summarizer-summary-container">
+            <div class="summarizer-summary-header">
+                <div class="summarizer-summary-badge">${escapeHtml(sizeLabel)} Summary${isSelectedText ? ' (Selected Text)' : ''}</div>
+                <div class="summarizer-summary-header-controls">
+                    <div class="summarizer-summary-settings">
+                        <button class="summarizer-summary-settings-btn" title="Display settings">&#9881;</button>
+                        <div class="summarizer-settings-popover summarizer-summary-popover">
+                            <div class="summarizer-settings-group">
+                                <div class="summarizer-settings-label">Font Size</div>
+                                <div class="summarizer-settings-options" data-setting="fontSize">
+                                    <button class="summarizer-settings-option${savedFontSize === 'small' ? ' active' : ''}" data-value="small">S</button>
+                                    <button class="summarizer-settings-option${savedFontSize === 'default' ? ' active' : ''}" data-value="default">M</button>
+                                    <button class="summarizer-settings-option${savedFontSize === 'large' ? ' active' : ''}" data-value="large">L</button>
                                 </div>
                             </div>
-                            <div class="digest-settings-group">
-                                <div class="digest-settings-label">Spacing</div>
-                                <div class="digest-settings-options" data-setting="lineHeight">
-                                    <button class="digest-settings-option${savedLineHeight === 'compact' ? ' active' : ''}" data-value="compact">-</button>
-                                    <button class="digest-settings-option${savedLineHeight === 'default' ? ' active' : ''}" data-value="default">=</button>
-                                    <button class="digest-settings-option${savedLineHeight === 'comfortable' ? ' active' : ''}" data-value="comfortable">+</button>
+                            <div class="summarizer-settings-group">
+                                <div class="summarizer-settings-label">Spacing</div>
+                                <div class="summarizer-settings-options" data-setting="lineHeight">
+                                    <button class="summarizer-settings-option${savedLineHeight === 'compact' ? ' active' : ''}" data-value="compact">-</button>
+                                    <button class="summarizer-settings-option${savedLineHeight === 'default' ? ' active' : ''}" data-value="default">=</button>
+                                    <button class="summarizer-settings-option${savedLineHeight === 'comfortable' ? ' active' : ''}" data-value="comfortable">+</button>
                                 </div>
                             </div>
-                            <div class="digest-settings-group">
-                                <div class="digest-settings-label">Theme</div>
-                                <div class="digest-settings-options" data-setting="theme">
-                                    <button class="digest-settings-option${currentTheme === 'light' ? ' active' : ''}" data-value="light">Light</button>
-                                    <button class="digest-settings-option${currentTheme === 'dark' ? ' active' : ''}" data-value="dark">Dark</button>
-                                    <button class="digest-settings-option${currentTheme === 'auto' ? ' active' : ''}" data-value="auto">Auto</button>
+                            <div class="summarizer-settings-group">
+                                <div class="summarizer-settings-label">Theme</div>
+                                <div class="summarizer-settings-options" data-setting="theme">
+                                    <button class="summarizer-settings-option${currentTheme === 'light' ? ' active' : ''}" data-value="light">Light</button>
+                                    <button class="summarizer-settings-option${currentTheme === 'dark' ? ' active' : ''}" data-value="dark">Dark</button>
+                                    <button class="summarizer-settings-option${currentTheme === 'auto' ? ' active' : ''}" data-value="auto">Auto</button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <button class="digest-summary-close" title="Close">&#10005;</button>
+                    <button class="summarizer-summary-close" title="Close">&#10005;</button>
                 </div>
             </div>
-            <div class="digest-summary-content">
-                <div class="digest-summary-content-inner">
+            <div class="summarizer-summary-content">
+                <div class="summarizer-summary-content-inner">
                     ${summaryText.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('')}
                 </div>
             </div>
-            <div class="digest-summary-footer">
-                <div class="digest-summary-footer-text">Summarize The Web</div>
-                <button class="digest-summary-close-btn">Close</button>
+            <div class="summarizer-summary-footer">
+                <div class="summarizer-summary-footer-text">Summarize The Web</div>
+                <button class="summarizer-summary-close-btn">Close</button>
             </div>
         </div>
     `;
 
     document.body.appendChild(summaryOverlay);
 
-    const closeBtn = summaryOverlay.querySelector('.digest-summary-close');
-    const closeBtnFooter = summaryOverlay.querySelector('.digest-summary-close-btn');
+    const closeBtn = summaryOverlay.querySelector('.summarizer-summary-close');
+    const closeBtnFooter = summaryOverlay.querySelector('.summarizer-summary-close-btn');
 
     const closeHandler = () => {
         removeSummaryOverlay();
@@ -1157,8 +1272,8 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     }
 
     // Summary settings popover
-    const settingsBtn = summaryOverlay.querySelector('.digest-summary-settings-btn');
-    const settingsPopover = summaryOverlay.querySelector('.digest-settings-popover');
+    const settingsBtn = summaryOverlay.querySelector('.summarizer-summary-settings-btn');
+    const settingsPopover = summaryOverlay.querySelector('.summarizer-settings-popover');
 
     settingsBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1166,42 +1281,42 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     });
 
     // Close popover when clicking outside
-    summaryOverlay.querySelector('.digest-summary-container').addEventListener('click', (e) => {
-        if (!e.target.closest('.digest-summary-settings')) {
+    summaryOverlay.querySelector('.summarizer-summary-container').addEventListener('click', (e) => {
+        if (!e.target.closest('.summarizer-summary-settings')) {
             settingsPopover.classList.remove('open');
         }
     });
 
     // Handle font size changes
-    const fontSizeOptions = summaryOverlay.querySelectorAll('[data-setting="fontSize"] .digest-settings-option');
+    const fontSizeOptions = summaryOverlay.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
     fontSizeOptions.forEach(btn => {
         btn.addEventListener('click', () => {
             const value = btn.dataset.value;
             fontSizeOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             storage.set(STORAGE_KEYS.SUMMARY_FONT_SIZE, value);
-            summaryOverlay.style.setProperty('--digest-font-size', `${SUMMARY_FONT_SIZES[value]}px`);
+            summaryOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[value]}px`);
             // Sync badge settings if visible
             syncBadgeSetting('fontSize', value);
         });
     });
 
     // Handle line height changes
-    const lineHeightOptions = summaryOverlay.querySelectorAll('[data-setting="lineHeight"] .digest-settings-option');
+    const lineHeightOptions = summaryOverlay.querySelectorAll('[data-setting="lineHeight"] .summarizer-settings-option');
     lineHeightOptions.forEach(btn => {
         btn.addEventListener('click', () => {
             const value = btn.dataset.value;
             lineHeightOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             storage.set(STORAGE_KEYS.SUMMARY_LINE_HEIGHT, value);
-            summaryOverlay.style.setProperty('--digest-line-height', SUMMARY_LINE_HEIGHTS[value]);
+            summaryOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[value]);
             // Sync badge settings if visible
             syncBadgeSetting('lineHeight', value);
         });
     });
 
     // Handle theme changes
-    const themeOptions = summaryOverlay.querySelectorAll('[data-setting="theme"] .digest-settings-option');
+    const themeOptions = summaryOverlay.querySelectorAll('[data-setting="theme"] .summarizer-settings-option');
     themeOptions.forEach(btn => {
         btn.addEventListener('click', () => {
             const value = btn.dataset.value;
@@ -1266,9 +1381,8 @@ function collapseOverlay(OVERLAY_COLLAPSED) {
     OVERLAY_COLLAPSED.value = true;
     overlay.classList.add('collapsed');
     overlay.style.left = '';
-    overlay.style.right = '';
-    overlay.style.transform = '';
-    const handle = overlay.querySelector('.digest-slide-handle');
+    overlay.style.right = '0px';
+    const handle = overlay.querySelector('.summarizer-slide-handle');
     if (handle) {
         handle.textContent = '◀';
         handle.title = 'Open';
@@ -1285,11 +1399,9 @@ function expandOverlay() {
         autoCollapsedState = null;
     }
     overlay.classList.remove('collapsed');
-    const rightEdgeX = viewportWidth() - BADGE_WIDTH;
-    overlay.style.right = '';
-    overlay.style.transform = '';
-    overlay.style.left = `${rightEdgeX}px`;
-    const handle = overlay.querySelector('.digest-slide-handle');
+    overlay.style.right = '0px';
+    overlay.style.left = '';
+    const handle = overlay.querySelector('.summarizer-slide-handle');
     if (handle) {
         handle.textContent = '▶';
         handle.title = 'Close';
@@ -1299,9 +1411,9 @@ function expandOverlay() {
 /**
  * Ensure overlay exists (recreate if removed)
  */
-export function ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect) {
+export function ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight) {
     if (!overlay || !overlay.isConnected) {
-        createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect);
+        createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight);
     }
 }
 

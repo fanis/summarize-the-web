@@ -58,13 +58,13 @@ describe('Overlay Module', () => {
       ensureCSS();
 
       expect(global.document.createElement).toHaveBeenCalledWith('style');
-      expect(createdElement.id).toBe('digest-style');
+      expect(createdElement.id).toBe('summarizer-style');
       expect(global.document.head.appendChild).toHaveBeenCalledWith(createdElement);
     });
 
     it('skips creation when style already exists', async () => {
       global.document = {
-        getElementById: vi.fn().mockReturnValue({ id: 'digest-style' }),
+        getElementById: vi.fn().mockReturnValue({ id: 'summarizer-style' }),
         createElement: vi.fn()
       };
 
@@ -75,7 +75,7 @@ describe('Overlay Module', () => {
       expect(global.document.createElement).not.toHaveBeenCalled();
     });
 
-    it('includes digest-overlay class in CSS', async () => {
+    it('includes summarizer-overlay class in CSS', async () => {
       const createdElement = {
         id: '',
         textContent: ''
@@ -93,7 +93,7 @@ describe('Overlay Module', () => {
       const { ensureCSS } = await import('../../src/modules/overlay.js');
       ensureCSS();
 
-      expect(createdElement.textContent).toContain('.digest-overlay');
+      expect(createdElement.textContent).toContain('.summarizer-overlay');
       expect(createdElement.textContent).toContain('position: fixed');
     });
 
@@ -115,7 +115,7 @@ describe('Overlay Module', () => {
       const { ensureCSS } = await import('../../src/modules/overlay.js');
       ensureCSS();
 
-      expect(createdElement.textContent).toContain('.digest-overlay.collapsed');
+      expect(createdElement.textContent).toContain('.summarizer-overlay.collapsed');
     });
 
     it('includes summary overlay styles', async () => {
@@ -136,7 +136,7 @@ describe('Overlay Module', () => {
       const { ensureCSS } = await import('../../src/modules/overlay.js');
       ensureCSS();
 
-      expect(createdElement.textContent).toContain('.digest-summary-overlay');
+      expect(createdElement.textContent).toContain('.summarizer-summary-overlay');
     });
   });
 
@@ -165,87 +165,87 @@ describe('Overlay Module', () => {
     });
 
     it('includes CSS custom property for font size', () => {
-      expect(createdElement.textContent).toContain('--digest-font-size');
+      expect(createdElement.textContent).toContain('--summarizer-font-size');
     });
 
     it('includes CSS custom property for line height', () => {
-      expect(createdElement.textContent).toContain('--digest-line-height');
+      expect(createdElement.textContent).toContain('--summarizer-line-height');
     });
 
     it('includes settings button styles', () => {
-      expect(createdElement.textContent).toContain('.digest-settings-btn');
+      expect(createdElement.textContent).toContain('.summarizer-settings-btn');
     });
 
     it('includes badge settings container styles', () => {
-      expect(createdElement.textContent).toContain('.digest-badge-settings');
+      expect(createdElement.textContent).toContain('.summarizer-badge-settings');
     });
 
     it('includes digest footer layout styles', () => {
-      expect(createdElement.textContent).toContain('.digest-footer');
+      expect(createdElement.textContent).toContain('.summarizer-footer');
     });
 
     it('includes settings popover styles', () => {
-      expect(createdElement.textContent).toContain('.digest-settings-popover');
+      expect(createdElement.textContent).toContain('.summarizer-settings-popover');
     });
 
     it('includes settings option styles', () => {
-      expect(createdElement.textContent).toContain('.digest-settings-option');
+      expect(createdElement.textContent).toContain('.summarizer-settings-option');
     });
 
     it('includes active state for settings options', () => {
-      expect(createdElement.textContent).toContain('.digest-settings-option.active');
+      expect(createdElement.textContent).toContain('.summarizer-settings-option.active');
     });
 
     it('popover is hidden by default', () => {
-      expect(createdElement.textContent).toMatch(/\.digest-settings-popover\s*\{[^}]*display:\s*none/);
+      expect(createdElement.textContent).toMatch(/\.summarizer-settings-popover\s*\{[^}]*display:\s*none/);
     });
 
     it('popover shows when open class applied', () => {
-      expect(createdElement.textContent).toMatch(/\.digest-settings-popover\.open\s*\{[^}]*display:\s*block/);
+      expect(createdElement.textContent).toMatch(/\.summarizer-settings-popover\.open\s*\{[^}]*display:\s*block/);
     });
 
     it('includes dark mode class for overlay', () => {
-      expect(createdElement.textContent).toContain('.digest-overlay.digest-dark');
+      expect(createdElement.textContent).toContain('.summarizer-overlay.summarizer-dark');
     });
 
     it('includes dark mode class for summary overlay', () => {
-      expect(createdElement.textContent).toContain('.digest-summary-overlay.digest-dark');
+      expect(createdElement.textContent).toContain('.summarizer-summary-overlay.summarizer-dark');
     });
 
     it('includes dark mode styles for settings popover', () => {
-      expect(createdElement.textContent).toContain('.digest-dark .digest-settings-popover');
+      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-settings-popover');
     });
 
     it('includes dark mode styles for buttons', () => {
-      expect(createdElement.textContent).toContain('.digest-dark .digest-btn');
+      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-btn');
     });
 
     it('includes shortcut input styles', () => {
-      expect(createdElement.textContent).toContain('.digest-shortcut-input');
+      expect(createdElement.textContent).toContain('.summarizer-shortcut-input');
     });
 
     it('includes shortcut row styles', () => {
-      expect(createdElement.textContent).toContain('.digest-shortcut-row');
+      expect(createdElement.textContent).toContain('.summarizer-shortcut-row');
     });
 
     it('includes shortcut recording state', () => {
-      expect(createdElement.textContent).toContain('.digest-shortcut-input.recording');
+      expect(createdElement.textContent).toContain('.summarizer-shortcut-input.recording');
     });
 
     it('includes dark mode styles for shortcuts', () => {
-      expect(createdElement.textContent).toContain('.digest-dark .digest-shortcut-input');
+      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-shortcut-input');
     });
 
     it('includes summary header controls styles', () => {
-      expect(createdElement.textContent).toContain('.digest-summary-header-controls');
+      expect(createdElement.textContent).toContain('.summarizer-summary-header-controls');
     });
 
     it('includes summary settings button styles', () => {
-      expect(createdElement.textContent).toContain('.digest-summary-settings-btn');
+      expect(createdElement.textContent).toContain('.summarizer-summary-settings-btn');
     });
 
     it('includes summary settings container styles', () => {
-      expect(createdElement.textContent).toContain('.digest-summary-settings');
+      expect(createdElement.textContent).toContain('.summarizer-summary-settings');
     });
   });
 
@@ -332,7 +332,7 @@ describe('Overlay Module', () => {
       const { ensureCSS } = await import('../../src/modules/overlay.js');
       ensureCSS();
 
-      expect(createdElement.textContent).toContain('.digest-overlay.dragging');
+      expect(createdElement.textContent).toContain('.summarizer-overlay.dragging');
       expect(createdElement.textContent).toContain('transition: none');
     });
   });

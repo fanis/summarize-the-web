@@ -8,6 +8,8 @@ import { generateCSSSelector, findMatchingSelectors, findMatchingExclusions, com
 
 let inspectionOverlay = null;
 let inspectedElement = null;
+let summaryHighlightActive = false;
+let highlightedElements = [];
 
 /**
  * Find the most specific/deepest meaningful element at coordinates
@@ -167,6 +169,21 @@ export function exitInspectionMode() {
 }
 
 /**
+ * Find ancestor that matches a selector list
+ */
+function findMatchingAncestor(el, selectors) {
+    for (const sel of selectors) {
+        try {
+            const ancestor = el.closest(sel);
+            if (ancestor && ancestor !== el) {
+                return { selector: sel, element: ancestor };
+            }
+        } catch {}
+    }
+    return null;
+}
+
+/**
  * Diagnose element for article container detection
  */
 function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE) {
@@ -194,6 +211,12 @@ function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL,
     const isMatched = globalSelectors.length > 0 || domainSelectors.length > 0;
     const isProcessed = isMatched && !isExcluded;
 
+    // Check if element is INSIDE a matched container (even if not directly matched)
+    const allSelectors = [...SELECTORS_GLOBAL, ...SELECTORS_DOMAIN];
+    const ancestorMatch = !isMatched ? findMatchingAncestor(el, allSelectors) : null;
+    const isInsideContainer = ancestorMatch !== null;
+    const isIncludedInSummary = !isExcluded && (isMatched || isInsideContainer);
+
     // Count text-containing children
     const textElements = el.querySelectorAll('p, li, blockquote, figcaption, dd, dt');
     const filteredTextElements = Array.from(textElements).filter(e => e.textContent.trim().length >= 40);
@@ -213,7 +236,11 @@ function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL,
         isExcluded,
         isMatched,
         isProcessed,
-        textElementCount: filteredTextElements.length
+        textElementCount: filteredTextElements.length,
+        // New fields for "included via container"
+        isInsideContainer,
+        ancestorMatch,
+        isIncludedInSummary
     };
 }
 
@@ -229,40 +256,59 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
 
     const style = document.createElement('style');
     style.textContent = `
-        .wrap { position: fixed; inset: 0; z-index: 2147483647; background: rgba(0,0,0,.55);
+        .wrap { position: fixed; inset: 0; z-index: 2147483647; background: rgba(0,0,0,.4);
                 display: flex; align-items: center; justify-content: center; }
-        .modal { background: #fff; max-width: 700px; width: 94%; max-height: 90vh;
-                 overflow-y: auto; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.4);
-                 padding: 20px; box-sizing: border-box; }
-        .modal h3 { margin: 0 0 16px; font: 700 18px/1.3 system-ui, sans-serif; color: #1a1a1a; }
-        .section { margin: 16px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; }
-        .section-title { font: 600 14px system-ui, sans-serif; margin: 0 0 8px; color: #444; }
-        .info-row { margin: 4px 0; font: 13px/1.5 ui-monospace, Consolas, monospace; color: #666; }
+        .modal { background: linear-gradient(135deg, #f8f9ff 0%, #fff5f7 100%); max-width: 700px; width: 96%;
+                 max-height: 90vh; border-radius: 16px; box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35);
+                 display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
+                 border: 3px solid #667eea; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px 20px;
+                  display: flex; align-items: center; justify-content: space-between; }
+        .header-title { font: 600 16px/1.2 system-ui, sans-serif; color: #fff; }
+        .header-close { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);
+                        color: #fff; font-size: 20px; font-weight: 600; width: 32px; height: 32px;
+                        border-radius: 8px; cursor: pointer; display: flex; align-items: center;
+                        justify-content: center; transition: all 0.2s; padding: 0; line-height: 1; }
+        .header-close:hover { background: rgba(255,255,255,0.3); transform: scale(1.05); }
+        .content { padding: 20px; overflow-y: auto; flex: 1; }
+        .section { margin: 0 0 16px; padding: 12px; background: rgba(255,255,255,0.8); border-radius: 8px;
+                   border: 1px solid rgba(102, 126, 234, 0.15); }
+        .section:last-child { margin-bottom: 0; }
+        .section-title { font: 600 13px system-ui, sans-serif; margin: 0 0 8px; color: #667eea;
+                         text-transform: uppercase; letter-spacing: 0.5px; }
+        .info-row { margin: 4px 0; font: 13px/1.5 system-ui, sans-serif; color: #555; }
         .info-label { font-weight: 600; color: #333; }
-        .status { display: inline-block; padding: 4px 12px; border-radius: 6px; font: 600 13px system-ui, sans-serif;
-                  margin: 8px 0; }
-        .status.processed { background: #d4edda; color: #155724; }
-        .status.not-processed { background: #f8d7da; color: #721c24; }
-        .status.excluded { background: #fff3cd; color: #856404; }
-        .list { margin: 8px 0; padding-left: 20px; }
+        .status { display: inline-block; padding: 8px 16px; border-radius: 8px; font: 600 13px system-ui, sans-serif;
+                  margin: 0 0 16px; }
+        .status.processed { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.not-processed { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .status.excluded { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .list { margin: 8px 0 0; padding-left: 20px; }
         .list li { margin: 4px 0; font: 13px/1.5 system-ui, sans-serif; }
         .list li.match { color: #155724; }
         .list li.no-match { color: #666; }
         .list li.problem { color: #721c24; font-weight: 600; }
-        .code { background: #f1f3f4; padding: 2px 6px; border-radius: 4px;
+        .code { background: #e8eaed; padding: 2px 6px; border-radius: 4px;
                 font: 12px ui-monospace, Consolas, monospace; color: #333; }
-        .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+        .footer { padding: 16px 20px; background: rgba(102, 126, 234, 0.05);
+                  border-top: 1px solid rgba(102, 126, 234, 0.15); }
+        .footer-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+        .footer-secondary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+                            padding-bottom: 12px; border-bottom: 1px solid rgba(102, 126, 234, 0.15); }
         .btn { padding: 10px 16px; border-radius: 8px; border: none;
                font: 600 13px system-ui, sans-serif; cursor: pointer; transition: all 0.15s ease; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn.primary { background: #667eea; color: #fff; }
-        .btn.primary:hover:not(:disabled) { background: #5568d3; }
+        .btn.primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff;
+                       box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
+        .btn.primary:hover:not(:disabled) { transform: translateY(-2px);
+                                             box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
         .btn.secondary { background: #e8eaed; color: #1a1a1a; }
         .btn.secondary:hover:not(:disabled) { background: #dadce0; }
         .btn.success { background: #34a853; color: #fff; }
         .btn.success:hover:not(:disabled) { background: #2d8e47; }
         .btn.danger { background: #ea4335; color: #fff; }
         .btn.danger:hover:not(:disabled) { background: #d33426; }
+        .btn.small { padding: 6px 12px; font-size: 12px; }
     `;
 
     const wrap = document.createElement('div');
@@ -275,10 +321,22 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
     } else if (diag.isProcessed) {
         statusClass = 'processed';
         statusText = 'MATCHED - This element matches article container selectors';
+    } else if (diag.isInsideContainer) {
+        statusClass = 'processed';
+        statusText = 'INCLUDED VIA CONTAINER - Inside a matched container, text will be summarized';
     } else {
         statusClass = 'not-processed';
-        statusText = 'NOT MATCHED - No selectors match this element';
+        statusText = 'NOT MATCHED - No selectors match this element or its ancestors';
     }
+
+    // Build ancestor container info if applicable
+    const ancestorInfoHTML = diag.ancestorMatch ?
+        `<div class="section">
+            <div class="section-title">Matched Container (Ancestor)</div>
+            <p class="info-row">This element is inside a container that matches:</p>
+            <ul class="list"><li class="match">✓ <span class="code">${escapeHtml(diag.ancestorMatch.selector)}</span></li></ul>
+            <p class="info-row"><span class="info-label">Container tag:</span> &lt;${diag.ancestorMatch.element.tagName.toLowerCase()}&gt;</p>
+        </div>` : '';
 
     const globalSelectorsHTML = diag.globalSelectors.length > 0 ?
         `<ul class="list">${diag.globalSelectors.map(s => `<li class="match">✓ <span class="code">${escapeHtml(s)}</span></li>`).join('')}</ul>` :
@@ -304,45 +362,56 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
 
     wrap.innerHTML = `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Element Inspection">
-            <h3>Element Inspection</h3>
-
-            <div class="section">
-                <div class="section-title">Element Information</div>
-                <div class="info-row"><span class="info-label">Tag:</span> &lt;${diag.tag}&gt;</div>
-                <div class="info-row"><span class="info-label">ID:</span> ${diag.id || '(none)'}</div>
-                <div class="info-row"><span class="info-label">Classes:</span> ${diag.classes || '(none)'}</div>
-                <div class="info-row"><span class="info-label">Text length:</span> ${diag.fullTextLength} characters</div>
-                <div class="info-row"><span class="info-label">Text elements (p, li, etc.):</span> ${diag.textElementCount} with 40+ chars</div>
-                <div class="info-row"><span class="info-label">CSS Selector:</span> <span class="code">${escapeHtml(diag.selector)}</span></div>
-                <div class="info-row"><span class="info-label">Preview:</span> "${escapeHtml(diag.text)}"</div>
+            <div class="header">
+                <div class="header-title">Element Inspection</div>
+                <button class="header-close close" title="Close">&#10005;</button>
             </div>
 
-            <div class="status ${statusClass}">${statusText}</div>
+            <div class="content">
+                <div class="status ${statusClass}">${statusText}</div>
 
-            <div class="section">
-                <div class="section-title">Global Container Selectors</div>
-                ${globalSelectorsHTML}
+                <div class="section">
+                    <div class="section-title">Element Information</div>
+                    <div class="info-row"><span class="info-label">Tag:</span> &lt;${diag.tag}&gt;</div>
+                    <div class="info-row"><span class="info-label">ID:</span> ${diag.id || '(none)'}</div>
+                    <div class="info-row"><span class="info-label">Classes:</span> ${diag.classes || '(none)'}</div>
+                    <div class="info-row"><span class="info-label">Text length:</span> ${diag.fullTextLength} characters</div>
+                    <div class="info-row"><span class="info-label">Text elements (p, li, etc.):</span> ${diag.textElementCount} with 40+ chars</div>
+                    <div class="info-row"><span class="info-label">CSS Selector:</span> <span class="code">${escapeHtml(diag.selector)}</span></div>
+                    <div class="info-row"><span class="info-label">Preview:</span> "${escapeHtml(diag.text)}"</div>
+                </div>
+
+                ${ancestorInfoHTML}
+
+                <div class="section">
+                    <div class="section-title">Global Container Selectors</div>
+                    ${globalSelectorsHTML}
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Domain Container Selectors (${HOST})</div>
+                    ${domainSelectorsHTML}
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Global Exclusions</div>
+                    ${globalExclusionsHTML}
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Domain Exclusions (${HOST})</div>
+                    ${domainExclusionsHTML}
+                </div>
             </div>
 
-            <div class="section">
-                <div class="section-title">Domain Container Selectors (${HOST})</div>
-                ${domainSelectorsHTML}
-            </div>
-
-            <div class="section">
-                <div class="section-title">Global Exclusions</div>
-                ${globalExclusionsHTML}
-            </div>
-
-            <div class="section">
-                <div class="section-title">Domain Exclusions (${HOST})</div>
-                ${domainExclusionsHTML}
-            </div>
-
-            <div class="actions">
-                ${buildActionButtons(diag, HOST)}
-                <button class="btn secondary copy-selector">Copy Selector</button>
-                <button class="btn secondary close">Close</button>
+            <div class="footer">
+                <div class="footer-secondary">
+                    ${buildActionButtons(diag, HOST)}
+                </div>
+                <div class="footer-actions">
+                    <button class="btn secondary copy-selector">Copy Selector</button>
+                    <button class="btn primary close">Close</button>
+                </div>
             </div>
         </div>
     `;
@@ -361,7 +430,7 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
         host.remove();
     };
 
-    shadow.querySelector('.close').addEventListener('click', close);
+    shadow.querySelectorAll('.close').forEach(btn => btn.addEventListener('click', close));
     wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
     shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
 
@@ -551,4 +620,201 @@ function attachActionHandlers(shadow, diag, closeDialog, storage, DOMAIN_SELECTO
             closeDialog();
         });
     });
+}
+
+/**
+ * Check if element is excluded
+ */
+function isElementExcluded(el, EXCLUDE) {
+    if (EXCLUDE.self) {
+        for (const sel of EXCLUDE.self) {
+            try { if (el.matches(sel)) return true; } catch {}
+        }
+    }
+    if (EXCLUDE.ancestors) {
+        for (const sel of EXCLUDE.ancestors) {
+            try { if (el.closest(sel)) return true; } catch {}
+        }
+    }
+    return false;
+}
+
+/**
+ * Show which elements would be included in summary
+ */
+export function showSummaryHighlight(SELECTORS, EXCLUDE, minLength = 100) {
+    if (summaryHighlightActive) {
+        exitSummaryHighlight();
+        return;
+    }
+
+    summaryHighlightActive = true;
+    highlightedElements = [];
+
+    // Get total page text for comparison
+    const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
+    const bodyLength = bodyText.length || 1;
+
+    // Collect all matching candidates with their text stats
+    const candidates = [];
+    for (const selector of SELECTORS) {
+        try {
+            const candidate = document.querySelector(selector);
+            if (!candidate) continue;
+
+            const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
+            const percent = Math.round((rawText.length / bodyLength) * 100);
+
+            candidates.push({ candidate, selector, text: rawText, length: rawText.length, percent });
+        } catch (e) {
+            // Invalid selector, skip
+        }
+    }
+
+    if (candidates.length === 0) {
+        showHighlightMessage('No article container found matching configured selectors.', false);
+        return;
+    }
+
+    // Sort by text length descending
+    candidates.sort((a, b) => b.length - a.length);
+
+    const best = candidates[0];
+
+    // Check if one container is dominant
+    const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
+
+    let selectedContainers = [];
+
+    if (dominated) {
+        selectedContainers = [best];
+    } else {
+        // Multiple significant containers - combine non-nested ones
+        const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
+
+        // Filter out nested containers
+        const nonNested = significant.filter((c, i) =>
+            !significant.some((other, j) => i !== j &&
+                (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
+            )
+        );
+
+        if (nonNested.length > 1) {
+            selectedContainers = nonNested;
+        } else {
+            selectedContainers = [best];
+        }
+    }
+
+    // Text element selectors - these are the elements that actually contain readable text
+    const textElementSelector = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, figcaption, dd, dt, pre, td, th';
+
+    let includedCount = 0;
+    let excludedCount = 0;
+
+    // Find and highlight text elements within containers
+    for (const c of selectedContainers) {
+        const textElements = c.candidate.querySelectorAll(textElementSelector);
+
+        for (const el of textElements) {
+            // Skip empty elements
+            const text = (el.innerText ?? el.textContent ?? '').trim();
+            if (text.length < 10) continue;
+
+            // Skip if already highlighted (nested elements)
+            if (highlightedElements.some(h => h.element === el || h.element.contains(el) || el.contains(h.element))) {
+                continue;
+            }
+
+            const excluded = isElementExcluded(el, EXCLUDE);
+
+            highlightedElements.push({
+                element: el,
+                origBoxShadow: el.style.boxShadow,
+                origPosition: el.style.position,
+                type: excluded ? 'excluded' : 'included'
+            });
+
+            if (excluded) {
+                el.style.boxShadow = 'inset 0 0 0 2px #ea4335';
+                excludedCount++;
+            } else {
+                el.style.boxShadow = 'inset 0 0 0 2px #34a853';
+                includedCount++;
+            }
+
+            if (getComputedStyle(el).position === 'static') {
+                el.style.position = 'relative';
+            }
+        }
+    }
+
+    // Show message overlay
+    const containerInfo = selectedContainers.map(c => `${c.selector} (${c.percent}%)`).join(', ');
+    showHighlightMessage(
+        `Container: ${containerInfo}\n` +
+        `Text blocks: ${includedCount} included (green), ${excludedCount} excluded (red)\n\n` +
+        `Press ESC or click this message to exit.`,
+        true
+    );
+}
+
+/**
+ * Show highlight message overlay
+ */
+function showHighlightMessage(text, clickToClose = false) {
+    const message = document.createElement('div');
+    message.setAttribute(UI_ATTR, '');
+    message.id = 'stw-highlight-message';
+    message.style.cssText = `
+        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+        background: linear-gradient(135deg, #34a853 0%, #1e8e3e 100%); color: white; padding: 16px 24px;
+        border-radius: 8px; font-size: 13px; font-weight: 500; line-height: 1.5;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 2147483646;
+        max-width: 600px; white-space: pre-wrap; font-family: system-ui, sans-serif;
+        ${clickToClose ? 'cursor: pointer;' : ''}
+    `;
+    message.textContent = text;
+    document.body.appendChild(message);
+
+    if (clickToClose) {
+        message.addEventListener('click', exitSummaryHighlight);
+    }
+
+    // Add ESC key listener
+    const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            exitSummaryHighlight();
+        }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    message._keyHandler = onKeyDown;
+}
+
+/**
+ * Exit summary highlight mode
+ */
+export function exitSummaryHighlight() {
+    if (!summaryHighlightActive) return;
+
+    // Restore original styles
+    for (const h of highlightedElements) {
+        h.element.style.boxShadow = h.origBoxShadow || '';
+        if (h.origPosition !== undefined) {
+            h.element.style.position = h.origPosition || '';
+        }
+    }
+    highlightedElements = [];
+
+    // Remove message
+    const message = document.getElementById('stw-highlight-message');
+    if (message) {
+        if (message._keyHandler) {
+            document.removeEventListener('keydown', message._keyHandler);
+        }
+        message.remove();
+    }
+
+    summaryHighlightActive = false;
 }

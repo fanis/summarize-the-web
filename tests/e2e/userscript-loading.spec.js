@@ -81,13 +81,13 @@ test.describe('Userscript Loading', () => {
     // Simulate overlay creation
     await page.evaluate(() => {
       const overlay = document.createElement('div');
-      overlay.id = 'digest-overlay';
+      overlay.id = 'summarizer-overlay-singleton';
       overlay.setAttribute('data-digest-ui', '');
       overlay.innerHTML = '<button>Summarize</button>';
       document.body.appendChild(overlay);
     });
 
-    const overlay = page.locator('#digest-overlay');
+    const overlay = page.locator('#summarizer-overlay-singleton');
     await expect(overlay).toBeVisible();
     await expect(overlay).toHaveAttribute('data-digest-ui', '');
   });
