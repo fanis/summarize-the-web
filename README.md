@@ -2,7 +2,7 @@
 
 A userscript that summarizes and simplifies web articles using the OpenAI API. Get quick summaries of any article or selected text directly in your browser.
 
-> **Latest Version**: 2.0.0 | [See What's New](CHANGELOG.md)
+> **Latest Version**: 2.1.0 | [See What's New](CHANGELOG.md)
 
 ## Features
 
@@ -12,6 +12,7 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 - **Display Settings**: Configurable font size and line spacing for comfortable reading
 - **Dark Mode**: Light/Dark/Auto themes following system preference
 - **Keyboard Shortcuts**: Configurable hotkeys for quick summarization (default: Alt+Shift+L/S)
+- **Show Included Elements**: Highlight which page elements would be included in a summary
 - **Element Inspection Mode**: Diagnostic tool to troubleshoot why elements are/aren't being detected
 - **Configurable Selectors**: Global + per-domain CSS selector configuration for article containers
 - **Caching**: Previously generated summaries are cached to save API costs
@@ -22,9 +23,9 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 - **Usage Statistics**: Track API token usage and estimated costs
 - **Mobile-Friendly**: Overlay auto-hides when viewing summaries on mobile, with full touch support for dragging
 
-**New in 2.0.0:** Display settings (font size, line spacing), dark mode support, and configurable keyboard shortcuts.
+**New in 2.1.0:** Show Included Elements feature to visualize what will be summarized, plus CSS isolation fixes for compatibility with other userscripts.
 
-**New in 1.6.x:** Multiple container combining, improved summary readability on wide displays.
+**New in 2.0.0:** Display settings (font size, line spacing), dark mode support, and configurable keyboard shortcuts.
 
 ## Installation
 
