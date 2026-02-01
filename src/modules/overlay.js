@@ -11,6 +11,7 @@ let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let autoCollapsedOverlay = false;
 let autoCollapsedState = null;
+let savedBodyOverflow = null;
 let currentTheme = 'auto';
 let mediaQueryList = null;
 let shortcuts = { ...DEFAULT_SHORTCUTS };
@@ -1179,6 +1180,10 @@ export function updateOverlayStatus(status, mode = null, fromCache = false) {
 export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, onRestore, storage) {
     removeSummaryOverlay();
 
+    // Prevent background page scrolling while modal is open
+    savedBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     // Auto-collapse actions overlay on mobile to prevent overlap
     if (overlay && !OVERLAY_COLLAPSED.value) {
         autoCollapsedOverlay = true;
@@ -1362,6 +1367,10 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
  * Remove summary overlay
  */
 export function removeSummaryOverlay() {
+    // Restore background page scrolling
+    document.body.style.overflow = savedBodyOverflow ?? '';
+    savedBodyOverflow = null;
+
     if (summaryOverlay && summaryOverlay.isConnected) {
         summaryOverlay.remove();
     }
