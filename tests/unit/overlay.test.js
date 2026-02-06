@@ -247,6 +247,19 @@ describe('Overlay Module', () => {
     it('includes summary settings container styles', () => {
       expect(createdElement.textContent).toContain('.summarizer-summary-settings');
     });
+
+    it('includes selectors-btn styles', () => {
+      expect(createdElement.textContent).toContain('.selectors-btn');
+    });
+
+    it('includes selectors-btn in shared action button rules', () => {
+      // selectors-btn should be included alongside inspect-btn and highlight-btn
+      expect(createdElement.textContent).toContain('.selectors-btn,');
+    });
+
+    it('includes dark mode styles for selectors-btn', () => {
+      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-badge-settings .selectors-btn');
+    });
   });
 
   describe('CSS specifications', () => {
