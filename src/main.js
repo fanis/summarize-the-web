@@ -9,7 +9,7 @@ import {
     openSimplificationStyleDialog, openModelSelectionDialog, openCustomPromptDialog,
     showStats, openDomainEditor, openSelectorEditor
 } from './modules/settings.js';
-import { enterInspectionMode, showSummaryHighlight } from './modules/inspection.js';
+import { enterInspectionMode, showSummaryHighlight, exitSummaryHighlight } from './modules/inspection.js';
 import { getTextToDigest } from './modules/extraction.js';
 import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, removeSummaryOverlay, BADGE_WIDTH } from './modules/overlay.js';
 
@@ -242,6 +242,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     // Inspection mode handler
     function handleInspection() {
+        exitSummaryHighlight();
         enterInspectionMode(
             SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN,
             EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE,
@@ -334,6 +335,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     // Selector configuration
     function handleEditSelectors() {
+        exitSummaryHighlight();
         openSelectorEditor({
             host: HOST,
             selectorsGlobal: SELECTORS_GLOBAL,

@@ -26,6 +26,10 @@ npm run test:all
 
 The build uses Rollup to bundle ES6 modules into a single IIFE userscript with the metadata header from `src/banner.txt`.
 
+## Tools
+
+GitHub CLI: `"/c/Program Files/GitHub CLI/gh.exe"` (use full path)
+
 ## Architecture
 
 This is a **browser userscript** for summarizing web articles using the OpenAI API. It runs in userscript managers (Tampermonkey, Violentmonkey, Greasemonkey).

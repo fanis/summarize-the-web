@@ -7,6 +7,7 @@ import { escapeHtml } from './utils.js';
 
 let overlay = null;
 let summaryOverlay = null;
+let summaryOverlayShadow = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let autoCollapsedOverlay = false;
@@ -85,7 +86,300 @@ function applyTheme(element, theme) {
  */
 function updateAllThemes(theme) {
     applyTheme(overlay, theme);
-    applyTheme(summaryOverlay, theme);
+    // For shadow DOM, apply theme to the inner overlay element
+    if (summaryOverlayShadow) {
+        const innerOverlay = summaryOverlayShadow.querySelector('.summarizer-summary-overlay');
+        applyTheme(innerOverlay, theme);
+    }
+}
+
+/**
+ * Generate CSS for summary overlay shadow DOM
+ */
+function getSummaryOverlayShadowCSS() {
+    return `
+        :host {
+            all: initial;
+            display: block;
+        }
+
+        .summarizer-summary-overlay {
+            position: fixed;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2147483645;
+            background: linear-gradient(135deg, #f8f9ff 0%, #fff5f7 100%);
+            border: 3px solid #667eea;
+            border-radius: 16px;
+            width: 96%;
+            max-width: 760px;
+            max-height: 90vh;
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35), 0 0 0 9999px rgba(0, 0, 0, 0.4);
+            animation: summarizer-summary-fadein 0.3s ease;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            box-sizing: border-box;
+        }
+
+        @keyframes summarizer-summary-fadein {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        .summarizer-summary-container {
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .summarizer-summary-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 16px 20px;
+            border-radius: 13px 13px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .summarizer-summary-badge {
+            font: 600 16px/1.2 system-ui, sans-serif;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summarizer-summary-close {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            font-size: 20px;
+            font-weight: 600;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .summarizer-summary-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .summarizer-summary-content {
+            padding: 28px 40px;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: var(--summarizer-font-size, 17px);
+            line-height: var(--summarizer-line-height, 1.8);
+            font-weight: 400;
+            color: #2d3748;
+            max-height: calc(90vh - 180px);
+            overflow-y: auto;
+        }
+
+        .summarizer-summary-content-inner {
+            max-width: 680px;
+            margin: 0 auto;
+        }
+
+        .summarizer-summary-content p {
+            margin: 0 0 1.25em 0;
+            text-align: left;
+            word-spacing: 0.05em;
+            letter-spacing: 0.01em;
+            font-size: inherit;
+            line-height: inherit;
+            font-family: inherit;
+            font-weight: inherit;
+            color: inherit;
+        }
+
+        .summarizer-summary-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .summarizer-summary-footer {
+            padding: 16px 20px;
+            background: rgba(102, 126, 234, 0.05);
+            border-top: 1px solid rgba(102, 126, 234, 0.15);
+            border-radius: 0 0 13px 13px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summarizer-summary-footer-text {
+            font: 400 11px/1.2 system-ui, sans-serif;
+            color: #999;
+            letter-spacing: 0.3px;
+        }
+
+        .summarizer-summary-close-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font: 600 14px/1.2 system-ui, sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .summarizer-summary-close-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+        }
+
+        .summarizer-summary-header-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summarizer-summary-settings {
+            position: relative;
+        }
+
+        .summarizer-summary-settings-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            font-size: 18px;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .summarizer-summary-settings-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .summarizer-summary-popover {
+            position: absolute;
+            top: 40px;
+            right: 0;
+            min-width: 180px;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 16px;
+            z-index: 10;
+            display: none;
+        }
+
+        .summarizer-summary-popover.open {
+            display: block;
+        }
+
+        .summarizer-settings-group {
+            margin-bottom: 14px;
+        }
+
+        .summarizer-settings-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .summarizer-settings-label {
+            font: 600 11px/1.2 system-ui, sans-serif;
+            color: #667eea;
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .summarizer-settings-options {
+            display: flex;
+            gap: 4px;
+        }
+
+        .summarizer-settings-option {
+            flex: 1;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            background: #fff;
+            color: #666;
+            border-radius: 6px;
+            cursor: pointer;
+            font: 500 12px/1.2 system-ui, sans-serif;
+            text-align: center;
+            transition: all 0.15s;
+        }
+
+        .summarizer-settings-option:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .summarizer-settings-option.active {
+            background: #667eea;
+            border-color: #667eea;
+            color: #fff;
+        }
+
+        /* Dark mode */
+        .summarizer-summary-overlay.summarizer-dark {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+            border-color: #4338ca;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-header {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-content {
+            color: #e5e7eb;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer {
+            background: rgba(30, 27, 75, 0.3);
+            border-top-color: rgba(99, 102, 241, 0.3);
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer-text {
+            color: #6b7280;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-close-btn {
+            background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-popover {
+            background: #1f2937;
+            border-color: #374151;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-label {
+            color: #a5b4fc;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option {
+            background: #374151;
+            border-color: #4b5563;
+            color: #d1d5db;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option:hover {
+            border-color: #6366f1;
+            color: #a5b4fc;
+        }
+        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option.active {
+            background: #6366f1;
+            border-color: #6366f1;
+            color: #fff;
+        }
+    `;
 }
 
 /**
@@ -384,7 +678,10 @@ export function ensureCSS() {
 
         .summarizer-summary-content {
             padding: 28px 40px !important;
-            font: var(--summarizer-font-size, 17px)/var(--summarizer-line-height, 1.8) system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+            font-size: var(--summarizer-font-size, 17px) !important;
+            line-height: var(--summarizer-line-height, 1.8) !important;
+            font-weight: 400 !important;
             color: #2d3748 !important;
             max-height: calc(90vh - 180px) !important;
             overflow-y: auto !important;
@@ -400,6 +697,11 @@ export function ensureCSS() {
             text-align: left !important;
             word-spacing: 0.05em !important;
             letter-spacing: 0.01em !important;
+            font-size: inherit !important;
+            line-height: inherit !important;
+            font-family: inherit !important;
+            font-weight: inherit !important;
+            color: inherit !important;
         }
 
         .summarizer-summary-content p:last-child {
@@ -938,7 +1240,8 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     // Handle font size changes
     const fontSizeOptions = overlay.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
     fontSizeOptions.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const value = btn.dataset.value;
             fontSizeOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -946,6 +1249,8 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
             // Apply live to open summary
             if (summaryOverlay && summaryOverlay.isConnected) {
                 summaryOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[value]}px`);
+                const contentEl = summaryOverlay.querySelector('.summarizer-summary-content');
+                if (contentEl) contentEl.style.setProperty('font-size', `${SUMMARY_FONT_SIZES[value]}px`, 'important');
             }
         });
     });
@@ -953,7 +1258,8 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     // Handle line height changes
     const lineHeightOptions = overlay.querySelectorAll('[data-setting="lineHeight"] .summarizer-settings-option');
     lineHeightOptions.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const value = btn.dataset.value;
             lineHeightOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -961,6 +1267,8 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
             // Apply live to open summary
             if (summaryOverlay && summaryOverlay.isConnected) {
                 summaryOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[value]);
+                const contentEl = summaryOverlay.querySelector('.summarizer-summary-content');
+                if (contentEl) contentEl.style.setProperty('line-height', SUMMARY_LINE_HEIGHTS[value], 'important');
             }
         });
     });
@@ -968,7 +1276,8 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     // Handle theme changes
     const themeOptions = overlay.querySelectorAll('[data-setting="theme"] .summarizer-settings-option');
     themeOptions.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const value = btn.dataset.value;
             themeOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -1188,7 +1497,7 @@ export function updateOverlayStatus(status, mode = null, fromCache = false) {
 }
 
 /**
- * Show summary overlay
+ * Show summary overlay (uses Shadow DOM for CSS isolation)
  */
 export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, onRestore, storage) {
     removeSummaryOverlay();
@@ -1204,73 +1513,84 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     const savedFontSize = await storage.get(STORAGE_KEYS.SUMMARY_FONT_SIZE) || 'default';
     const savedLineHeight = await storage.get(STORAGE_KEYS.SUMMARY_LINE_HEIGHT) || 'default';
 
-    summaryOverlay = document.createElement('div');
-    summaryOverlay.className = 'summarizer-summary-overlay';
-    summaryOverlay.setAttribute(UI_ATTR, '');
-
-    // Apply CSS custom properties
-    summaryOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[savedFontSize]}px`);
-    summaryOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[savedLineHeight]);
-
-    // Apply theme
-    applyTheme(summaryOverlay, currentTheme);
-
     const sizeLabel = mode.includes('large') ? 'Large' : 'Small';
     const isSelectedText = !container;
 
-    summaryOverlay.innerHTML = `
-        <div class="summarizer-summary-container">
-            <div class="summarizer-summary-header">
-                <div class="summarizer-summary-badge">${escapeHtml(sizeLabel)} Summary${isSelectedText ? ' (Selected Text)' : ''}</div>
-                <div class="summarizer-summary-header-controls">
-                    <div class="summarizer-summary-settings">
-                        <button class="summarizer-summary-settings-btn" title="Display settings">&#9881;</button>
-                        <div class="summarizer-settings-popover summarizer-summary-popover">
-                            <div class="summarizer-settings-group">
-                                <div class="summarizer-settings-label">Font Size</div>
-                                <div class="summarizer-settings-options" data-setting="fontSize">
-                                    <button class="summarizer-settings-option${savedFontSize === 'small' ? ' active' : ''}" data-value="small">S</button>
-                                    <button class="summarizer-settings-option${savedFontSize === 'default' ? ' active' : ''}" data-value="default">M</button>
-                                    <button class="summarizer-settings-option${savedFontSize === 'large' ? ' active' : ''}" data-value="large">L</button>
+    // Create host element for shadow DOM
+    summaryOverlay = document.createElement('div');
+    summaryOverlay.setAttribute(UI_ATTR, '');
+
+    // Attach shadow root
+    summaryOverlayShadow = summaryOverlay.attachShadow({ mode: 'open' });
+
+    // Build shadow DOM content
+    summaryOverlayShadow.innerHTML = `
+        <style>${getSummaryOverlayShadowCSS()}</style>
+        <div class="summarizer-summary-overlay">
+            <div class="summarizer-summary-container">
+                <div class="summarizer-summary-header">
+                    <div class="summarizer-summary-badge">${escapeHtml(sizeLabel)} Summary${isSelectedText ? ' (Selected Text)' : ''}</div>
+                    <div class="summarizer-summary-header-controls">
+                        <div class="summarizer-summary-settings">
+                            <button class="summarizer-summary-settings-btn" title="Display settings">&#9881;</button>
+                            <div class="summarizer-settings-popover summarizer-summary-popover">
+                                <div class="summarizer-settings-group">
+                                    <div class="summarizer-settings-label">Font Size</div>
+                                    <div class="summarizer-settings-options" data-setting="fontSize">
+                                        <button class="summarizer-settings-option${savedFontSize === 'small' ? ' active' : ''}" data-value="small">S</button>
+                                        <button class="summarizer-settings-option${savedFontSize === 'default' ? ' active' : ''}" data-value="default">M</button>
+                                        <button class="summarizer-settings-option${savedFontSize === 'large' ? ' active' : ''}" data-value="large">L</button>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="summarizer-settings-group">
-                                <div class="summarizer-settings-label">Spacing</div>
-                                <div class="summarizer-settings-options" data-setting="lineHeight">
-                                    <button class="summarizer-settings-option${savedLineHeight === 'compact' ? ' active' : ''}" data-value="compact">-</button>
-                                    <button class="summarizer-settings-option${savedLineHeight === 'default' ? ' active' : ''}" data-value="default">=</button>
-                                    <button class="summarizer-settings-option${savedLineHeight === 'comfortable' ? ' active' : ''}" data-value="comfortable">+</button>
+                                <div class="summarizer-settings-group">
+                                    <div class="summarizer-settings-label">Spacing</div>
+                                    <div class="summarizer-settings-options" data-setting="lineHeight">
+                                        <button class="summarizer-settings-option${savedLineHeight === 'compact' ? ' active' : ''}" data-value="compact">-</button>
+                                        <button class="summarizer-settings-option${savedLineHeight === 'default' ? ' active' : ''}" data-value="default">=</button>
+                                        <button class="summarizer-settings-option${savedLineHeight === 'comfortable' ? ' active' : ''}" data-value="comfortable">+</button>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="summarizer-settings-group">
-                                <div class="summarizer-settings-label">Theme</div>
-                                <div class="summarizer-settings-options" data-setting="theme">
-                                    <button class="summarizer-settings-option${currentTheme === 'light' ? ' active' : ''}" data-value="light">Light</button>
-                                    <button class="summarizer-settings-option${currentTheme === 'dark' ? ' active' : ''}" data-value="dark">Dark</button>
-                                    <button class="summarizer-settings-option${currentTheme === 'auto' ? ' active' : ''}" data-value="auto">Auto</button>
+                                <div class="summarizer-settings-group">
+                                    <div class="summarizer-settings-label">Theme</div>
+                                    <div class="summarizer-settings-options" data-setting="theme">
+                                        <button class="summarizer-settings-option${currentTheme === 'light' ? ' active' : ''}" data-value="light">Light</button>
+                                        <button class="summarizer-settings-option${currentTheme === 'dark' ? ' active' : ''}" data-value="dark">Dark</button>
+                                        <button class="summarizer-settings-option${currentTheme === 'auto' ? ' active' : ''}" data-value="auto">Auto</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        <button class="summarizer-summary-close" title="Close">&#10005;</button>
                     </div>
-                    <button class="summarizer-summary-close" title="Close">&#10005;</button>
                 </div>
-            </div>
-            <div class="summarizer-summary-content">
-                <div class="summarizer-summary-content-inner">
-                    ${summaryText.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('')}
+                <div class="summarizer-summary-content">
+                    <div class="summarizer-summary-content-inner">
+                        ${summaryText.split('\n\n').map(p => `<p>${escapeHtml(p)}</p>`).join('')}
+                    </div>
                 </div>
-            </div>
-            <div class="summarizer-summary-footer">
-                <div class="summarizer-summary-footer-text">Summarize The Web</div>
-                <button class="summarizer-summary-close-btn">Close</button>
+                <div class="summarizer-summary-footer">
+                    <div class="summarizer-summary-footer-text">Summarize The Web</div>
+                    <button class="summarizer-summary-close-btn">Close</button>
+                </div>
             </div>
         </div>
     `;
 
     document.body.appendChild(summaryOverlay);
 
-    const closeBtn = summaryOverlay.querySelector('.summarizer-summary-close');
-    const closeBtnFooter = summaryOverlay.querySelector('.summarizer-summary-close-btn');
+    // Get references to shadow DOM elements
+    const innerOverlay = summaryOverlayShadow.querySelector('.summarizer-summary-overlay');
+    const contentEl = summaryOverlayShadow.querySelector('.summarizer-summary-content');
+
+    // Apply CSS custom properties to the inner overlay
+    innerOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[savedFontSize]}px`);
+    innerOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[savedLineHeight]);
+
+    // Apply theme to inner overlay
+    applyTheme(innerOverlay, currentTheme);
+
+    const closeBtn = summaryOverlayShadow.querySelector('.summarizer-summary-close');
+    const closeBtnFooter = summaryOverlayShadow.querySelector('.summarizer-summary-close-btn');
 
     const closeHandler = () => {
         removeSummaryOverlay();
@@ -1286,8 +1606,8 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     }
 
     // Summary settings popover
-    const settingsBtn = summaryOverlay.querySelector('.summarizer-summary-settings-btn');
-    const settingsPopover = summaryOverlay.querySelector('.summarizer-settings-popover');
+    const settingsBtn = summaryOverlayShadow.querySelector('.summarizer-summary-settings-btn');
+    const settingsPopover = summaryOverlayShadow.querySelector('.summarizer-settings-popover');
 
     settingsBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1295,44 +1615,47 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     });
 
     // Close popover when clicking outside
-    summaryOverlay.querySelector('.summarizer-summary-container').addEventListener('click', (e) => {
+    summaryOverlayShadow.querySelector('.summarizer-summary-container').addEventListener('click', (e) => {
         if (!e.target.closest('.summarizer-summary-settings')) {
             settingsPopover.classList.remove('open');
         }
     });
 
     // Handle font size changes
-    const fontSizeOptions = summaryOverlay.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
+    const fontSizeOptions = summaryOverlayShadow.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
     fontSizeOptions.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const value = btn.dataset.value;
             fontSizeOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             storage.set(STORAGE_KEYS.SUMMARY_FONT_SIZE, value);
-            summaryOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[value]}px`);
+            innerOverlay.style.setProperty('--summarizer-font-size', `${SUMMARY_FONT_SIZES[value]}px`);
             // Sync badge settings if visible
             syncBadgeSetting('fontSize', value);
         });
     });
 
     // Handle line height changes
-    const lineHeightOptions = summaryOverlay.querySelectorAll('[data-setting="lineHeight"] .summarizer-settings-option');
+    const lineHeightOptions = summaryOverlayShadow.querySelectorAll('[data-setting="lineHeight"] .summarizer-settings-option');
     lineHeightOptions.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const value = btn.dataset.value;
             lineHeightOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             storage.set(STORAGE_KEYS.SUMMARY_LINE_HEIGHT, value);
-            summaryOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[value]);
+            innerOverlay.style.setProperty('--summarizer-line-height', SUMMARY_LINE_HEIGHTS[value]);
             // Sync badge settings if visible
             syncBadgeSetting('lineHeight', value);
         });
     });
 
     // Handle theme changes
-    const themeOptions = summaryOverlay.querySelectorAll('[data-setting="theme"] .summarizer-settings-option');
+    const themeOptions = summaryOverlayShadow.querySelectorAll('[data-setting="theme"] .summarizer-settings-option');
     themeOptions.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const value = btn.dataset.value;
             themeOptions.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -1343,9 +1666,9 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
         });
     });
 
-    // Close overlay when clicking backdrop
-    summaryOverlay.addEventListener('click', (e) => {
-        if (e.target === summaryOverlay) {
+    // Close overlay when clicking the backdrop (the inner overlay element itself, not the container)
+    innerOverlay.addEventListener('click', (e) => {
+        if (e.target === innerOverlay) {
             if (isSelectedText) {
                 removeSummaryOverlay();
             } else {
@@ -1380,6 +1703,7 @@ export function removeSummaryOverlay() {
         summaryOverlay.remove();
     }
     summaryOverlay = null;
+    summaryOverlayShadow = null;
 
     if (autoCollapsedOverlay) {
         autoCollapsedOverlay = false;

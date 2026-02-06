@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-02-06
+
+### Changed
+- **Shadow DOM for Summary Overlay**: Summary overlay now uses Shadow DOM for complete CSS isolation from host page styles, fixing display issues on sites with aggressive CSS (e.g., kathimerini.com.cy)
+
+### Fixed
+- Font size, line height, and dark mode settings now work reliably on all sites due to Shadow DOM isolation
+- Added `stopPropagation()` to settings button click handlers to prevent site script interference
+
 ## [2.2.0] - 2026-02-06
 
 ### Added

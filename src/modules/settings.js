@@ -757,44 +757,54 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
     const shadow = hostEl.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
     style.textContent = `
-        .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
+        .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.4);
               display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0}
-        .modal{background:#fff;max-width:700px;width:94%;border-radius:12px;
-               box-shadow:0 10px 40px rgba(0,0,0,.3);padding:24px;box-sizing:border-box;
-               max-height:calc(100vh - 80px);overflow-y:auto}
-        h3{margin:0 0 16px;font:600 18px/1.2 system-ui,sans-serif;color:#1a1a1a}
-        .tabs{display:inline-flex;margin:0 0 20px;background:#e5e7eb;border-radius:8px;padding:4px}
+        .modal{background:linear-gradient(135deg,#f8f9ff 0%,#fff5f7 100%);max-width:700px;width:96%;
+               border-radius:16px;box-shadow:0 10px 40px rgba(102,126,234,0.35);
+               display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;
+               border:3px solid #667eea;max-height:calc(100vh - 80px)}
+        .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:16px 20px;
+                display:flex;align-items:center;justify-content:space-between}
+        .header-title{font:600 16px/1.2 system-ui,sans-serif;color:#fff}
+        .header-close{background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);
+                      color:#fff;font-size:20px;font-weight:600;width:32px;height:32px;
+                      border-radius:8px;cursor:pointer;display:flex;align-items:center;
+                      justify-content:center;transition:all 0.2s;padding:0;line-height:1}
+        .header-close:hover{background:rgba(255,255,255,0.3);transform:scale(1.05)}
+        .content{padding:20px;overflow-y:auto;flex:1}
+        .tabs{display:inline-flex;margin:0 0 16px;background:rgba(102,126,234,0.15);border-radius:8px;padding:4px}
         .tab{padding:8px 16px;border:none;background:none;cursor:pointer;
-             font:600 13px/1.2 system-ui,sans-serif;color:#666;border-radius:6px;
+             font:600 13px/1.2 system-ui,sans-serif;color:#667eea;border-radius:6px;
              transition:all 0.15s;white-space:nowrap}
-        .tab:hover{color:#4338ca}
-        .tab.active{background:#fff;color:#667eea;box-shadow:0 1px 3px rgba(0,0,0,.1)}
-        .tab-content{transition:height 0.2s ease}
+        .tab:hover{background:rgba(255,255,255,0.5)}
+        .tab.active{background:#fff;color:#667eea;box-shadow:0 2px 8px rgba(102,126,234,0.25)}
         .tab-panel{display:none}
         .tab-panel.active{display:block}
-        .section{margin:0 0 16px}
+        .section{margin:0 0 16px;padding:12px;background:rgba(255,255,255,0.8);border-radius:8px;
+                 border:1px solid rgba(102,126,234,0.15)}
         .section:last-child{margin-bottom:0}
-        .section-label{font:600 11px/1.2 system-ui,sans-serif;margin:0 0 6px;color:#555;
+        .section-label{font:600 13px system-ui,sans-serif;margin:0 0 8px;color:#667eea;
                        text-transform:uppercase;letter-spacing:0.5px}
-        .section-hint{font:11px/1.3 system-ui,sans-serif;color:#999;margin:4px 0 0}
+        .section-hint{font:11px/1.3 system-ui,sans-serif;color:#888;margin:4px 0 0}
         textarea{width:100%;height:100px;resize:vertical;padding:10px;box-sizing:border-box;
-                 font:12px/1.4 ui-monospace,Consolas,monospace;border:2px solid #e0e0e0;
-                 border-radius:8px}
-        textarea:focus{outline:none;border-color:#667eea}
-        textarea.readonly{background:#f5f5f5;color:#666;height:70px;cursor:default}
+                 font:12px/1.4 ui-monospace,Consolas,monospace;border:1px solid rgba(102,126,234,0.2);
+                 border-radius:6px;background:#fff}
+        textarea:focus{outline:none;border-color:#667eea;box-shadow:0 0 0 3px rgba(102,126,234,0.1)}
+        textarea.readonly{background:#f0f0f5;color:#666;height:70px;cursor:default}
         textarea.editable{height:80px}
-        .context-label{font:500 10px/1.2 system-ui,sans-serif;color:#999;margin:12px 0 4px;
+        .context-label{font:500 10px/1.2 system-ui,sans-serif;color:#888;margin:10px 0 4px;
                        text-transform:uppercase;letter-spacing:0.3px}
-        .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;
-                 position:sticky;bottom:0;background:#fff;padding-top:12px}
-        .btn{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;
-             font:600 14px system-ui,sans-serif}
-        .btn-save{background:#667eea;color:#fff}
-        .btn-save:hover{background:#5568d3}
-        .btn-reset{background:#ff6b6b;color:#fff}
-        .btn-reset:hover{background:#ee5a52}
-        .btn-cancel{background:#e0e0e0;color:#333}
-        .btn-cancel:hover{background:#d0d0d0}
+        .footer{padding:16px 20px;background:rgba(102,126,234,0.05);
+                border-top:1px solid rgba(102,126,234,0.15);display:flex;gap:8px;justify-content:flex-end}
+        .btn{padding:10px 16px;border-radius:8px;border:none;cursor:pointer;
+             font:600 13px system-ui,sans-serif;transition:all 0.15s ease}
+        .btn-save{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;
+                  box-shadow:0 4px 12px rgba(102,126,234,0.3)}
+        .btn-save:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(102,126,234,0.4)}
+        .btn-reset{background:#ea4335;color:#fff}
+        .btn-reset:hover{background:#d33426}
+        .btn-cancel{background:#e8eaed;color:#1a1a1a}
+        .btn-cancel:hover{background:#dadce0}
     `;
 
     const globalSelectors = (selectorsGlobal || []).join('\n');
@@ -808,57 +818,59 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
     wrap.className = 'wrap';
     wrap.innerHTML = `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Edit Selectors">
-            <h3>Edit Selectors</h3>
-            <div class="tabs">
-                <button class="tab active" data-tab="global">Global</button>
-                <button class="tab" data-tab="domain">${escapeHtml(host)}</button>
+            <div class="header">
+                <span class="header-title">Edit Selectors</span>
+                <button class="header-close" aria-label="Close">\u00d7</button>
             </div>
+            <div class="content">
+                <div class="tabs">
+                    <button class="tab active" data-tab="global">Global</button>
+                    <button class="tab" data-tab="domain">${escapeHtml(host)}</button>
+                </div>
 
-            <div class="tab-content">
-            <div class="tab-panel active" data-panel="global">
-                <div class="section">
-                    <div class="section-label">Container Selectors</div>
-                    <textarea id="g-selectors" spellcheck="false">${escapeHtml(globalSelectors)}</textarea>
-                    <div class="section-hint">CSS selectors for finding article containers. One per line.</div>
+                <div class="tab-panel active" data-panel="global">
+                    <div class="section">
+                        <div class="section-label">Container Selectors</div>
+                        <textarea id="g-selectors" spellcheck="false">${escapeHtml(globalSelectors)}</textarea>
+                        <div class="section-hint">CSS selectors for finding article containers. One per line.</div>
+                    </div>
+                    <div class="section">
+                        <div class="section-label">Excluded Elements (self)</div>
+                        <textarea id="g-ex-self" spellcheck="false">${escapeHtml(globalExSelf)}</textarea>
+                        <div class="section-hint">Elements matching these selectors are skipped. One per line.</div>
+                    </div>
+                    <div class="section">
+                        <div class="section-label">Excluded Containers (ancestors)</div>
+                        <textarea id="g-ex-anc" spellcheck="false">${escapeHtml(globalExAnc)}</textarea>
+                        <div class="section-hint">Text inside these containers is excluded. One per line.</div>
+                    </div>
                 </div>
-                <div class="section">
-                    <div class="section-label">Excluded Elements (self)</div>
-                    <textarea id="g-ex-self" spellcheck="false">${escapeHtml(globalExSelf)}</textarea>
-                    <div class="section-hint">Elements matching these selectors are skipped. One per line.</div>
-                </div>
-                <div class="section">
-                    <div class="section-label">Excluded Containers (ancestors)</div>
-                    <textarea id="g-ex-anc" spellcheck="false">${escapeHtml(globalExAnc)}</textarea>
-                    <div class="section-hint">Text inside these containers is excluded. One per line.</div>
-                </div>
-            </div>
 
-            <div class="tab-panel" data-panel="domain">
-                <div class="section">
-                    <div class="section-label">Container Selectors</div>
-                    <div class="context-label">Global (read-only)</div>
-                    <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalSelectors)}</textarea>
-                    <div class="context-label">Domain-specific additions</div>
-                    <textarea id="d-selectors" class="editable" spellcheck="false">${escapeHtml(domSelectors)}</textarea>
-                </div>
-                <div class="section">
-                    <div class="section-label">Excluded Elements (self)</div>
-                    <div class="context-label">Global (read-only)</div>
-                    <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalExSelf)}</textarea>
-                    <div class="context-label">Domain-specific additions</div>
-                    <textarea id="d-ex-self" class="editable" spellcheck="false">${escapeHtml(domExSelf)}</textarea>
-                </div>
-                <div class="section">
-                    <div class="section-label">Excluded Containers (ancestors)</div>
-                    <div class="context-label">Global (read-only)</div>
-                    <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalExAnc)}</textarea>
-                    <div class="context-label">Domain-specific additions</div>
-                    <textarea id="d-ex-anc" class="editable" spellcheck="false">${escapeHtml(domExAnc)}</textarea>
+                <div class="tab-panel" data-panel="domain">
+                    <div class="section">
+                        <div class="section-label">Container Selectors</div>
+                        <div class="context-label">Global (read-only)</div>
+                        <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalSelectors)}</textarea>
+                        <div class="context-label">Domain-specific additions</div>
+                        <textarea id="d-selectors" class="editable" spellcheck="false">${escapeHtml(domSelectors)}</textarea>
+                    </div>
+                    <div class="section">
+                        <div class="section-label">Excluded Elements (self)</div>
+                        <div class="context-label">Global (read-only)</div>
+                        <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalExSelf)}</textarea>
+                        <div class="context-label">Domain-specific additions</div>
+                        <textarea id="d-ex-self" class="editable" spellcheck="false">${escapeHtml(domExSelf)}</textarea>
+                    </div>
+                    <div class="section">
+                        <div class="section-label">Excluded Containers (ancestors)</div>
+                        <div class="context-label">Global (read-only)</div>
+                        <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalExAnc)}</textarea>
+                        <div class="context-label">Domain-specific additions</div>
+                        <textarea id="d-ex-anc" class="editable" spellcheck="false">${escapeHtml(domExAnc)}</textarea>
+                    </div>
                 </div>
             </div>
-            </div>
-
-            <div class="actions">
+            <div class="footer">
                 <button class="btn btn-reset">Reset Defaults</button>
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save &amp; Reload</button>
@@ -903,8 +915,7 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
             }
         };
         await onSave(data);
-        btnSave.textContent = 'Saved!';
-        btnSave.style.background = '#34a853';
+        btnSave.textContent = '\u2713 Saved!';
         setTimeout(() => location.reload(), 800);
     });
 
@@ -923,6 +934,7 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
     });
 
     btnCancel.addEventListener('click', close);
+    shadow.querySelector('.header-close').addEventListener('click', close);
     wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
     shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
 

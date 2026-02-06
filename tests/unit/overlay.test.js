@@ -374,4 +374,69 @@ describe('Overlay Module', () => {
       expect(typeof overlay.getOverlay).toBe('function');
     });
   });
+
+  describe('Summary overlay display settings CSS', () => {
+    let createdElement;
+
+    beforeEach(async () => {
+      createdElement = { id: '', textContent: '' };
+      global.document = {
+        getElementById: vi.fn().mockReturnValue(null),
+        createElement: vi.fn().mockReturnValue(createdElement),
+        head: { appendChild: vi.fn() }
+      };
+      vi.resetModules();
+      const { ensureCSS } = await import('../../src/modules/overlay.js');
+      ensureCSS();
+    });
+
+    it('uses CSS variable for font-size in summary content', () => {
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content[^}]*font-size:\s*var\(--summarizer-font-size/);
+    });
+
+    it('uses CSS variable for line-height in summary content', () => {
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content[^}]*line-height:\s*var\(--summarizer-line-height/);
+    });
+
+    it('provides fallback values for CSS variables', () => {
+      // Fallback ensures styles work even if variables not set
+      expect(createdElement.textContent).toMatch(/--summarizer-font-size,\s*\d+px/);
+      expect(createdElement.textContent).toMatch(/--summarizer-line-height,\s*[\d.]+/);
+    });
+
+    it('uses !important on summary content font properties to prevent site overrides', () => {
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*font-size:[^}]*!important/);
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*line-height:[^}]*!important/);
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*font-family:[^}]*!important/);
+    });
+  });
+
+  describe('Dark mode summary overlay CSS', () => {
+    let createdElement;
+
+    beforeEach(async () => {
+      createdElement = { id: '', textContent: '' };
+      global.document = {
+        getElementById: vi.fn().mockReturnValue(null),
+        createElement: vi.fn().mockReturnValue(createdElement),
+        head: { appendChild: vi.fn() }
+      };
+      vi.resetModules();
+      const { ensureCSS } = await import('../../src/modules/overlay.js');
+      ensureCSS();
+    });
+
+    it('sets light text color for dark mode summary content', () => {
+      // #e5e7eb is a light gray suitable for dark backgrounds
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-overlay\.summarizer-dark\s+\.summarizer-summary-content[^}]*color:\s*#e5e7eb/);
+    });
+
+    it('uses !important on dark mode text color to prevent site overrides', () => {
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-overlay\.summarizer-dark\s+\.summarizer-summary-content[^}]*color:[^}]*!important/);
+    });
+
+    it('sets dark background for dark mode summary overlay', () => {
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-overlay\.summarizer-dark[^.][^}]*background:/);
+    });
+  });
 });

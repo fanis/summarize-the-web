@@ -37,7 +37,7 @@ describe('openSelectorEditor', () => {
 
     it('has a modal with correct title', () => {
       const { shadow } = openDialog();
-      const title = shadow.querySelector('h3');
+      const title = shadow.querySelector('.header-title');
       expect(title.textContent).toBe('Edit Selectors');
     });
 
@@ -301,6 +301,12 @@ describe('openSelectorEditor', () => {
       expect(document.body.querySelector('[data-digest-ui]')).toBeNull();
     });
 
+    it('removes dialog on header close button click', () => {
+      const { shadow } = openDialog();
+      shadow.querySelector('.header-close').click();
+      expect(document.body.querySelector('[data-digest-ui]')).toBeNull();
+    });
+
     it('removes dialog on Escape keydown', () => {
       const { shadow } = openDialog();
       shadow.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
@@ -387,6 +393,24 @@ describe('openSelectorEditor', () => {
       const style = shadow.querySelector('style').textContent;
       expect(style).toMatch(/\.tab-panel\{[^}]*display:none/);
       expect(style).toMatch(/\.tab-panel\.active\{[^}]*display:block/);
+    });
+
+    it('modal has gradient background matching inspection style', () => {
+      const { shadow } = openDialog();
+      const style = shadow.querySelector('style').textContent;
+      expect(style).toMatch(/\.modal\{[^}]*background:linear-gradient/);
+    });
+
+    it('modal has purple border matching inspection style', () => {
+      const { shadow } = openDialog();
+      const style = shadow.querySelector('style').textContent;
+      expect(style).toMatch(/\.modal\{[^}]*border:3px solid #667eea/);
+    });
+
+    it('has gradient header', () => {
+      const { shadow } = openDialog();
+      const style = shadow.querySelector('style').textContent;
+      expect(style).toMatch(/\.header\{[^}]*background:linear-gradient/);
     });
   });
 });
