@@ -1693,6 +1693,185 @@
     }
 
     /**
+     * Show unified selector editor dialog (global + domain-specific, tabbed)
+     */
+    function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selectorsDomain, excludeDomain, defaultSelectors, defaultExcludes, onSave }) {
+        const hostEl = document.createElement('div');
+        hostEl.setAttribute(UI_ATTR, '');
+        const shadow = hostEl.attachShadow({ mode: 'open' });
+        const style = document.createElement('style');
+        style.textContent = `
+        .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
+              display:flex;align-items:center;justify-content:center;overflow-y:auto}
+        .modal{background:#fff;max-width:700px;width:94%;border-radius:12px;
+               box-shadow:0 10px 40px rgba(0,0,0,.3);padding:24px;box-sizing:border-box;
+               margin:20px;max-height:90vh;overflow-y:auto}
+        h3{margin:0 0 16px;font:600 18px/1.2 system-ui,sans-serif;color:#1a1a1a}
+        .tabs{display:flex;gap:4px;margin:0 0 20px;border-bottom:2px solid #e0e0e0;padding-bottom:0}
+        .tab{padding:10px 20px;border:none;background:none;cursor:pointer;
+             font:600 13px/1.2 system-ui,sans-serif;color:#666;border-bottom:2px solid transparent;
+             margin-bottom:-2px;transition:all 0.15s}
+        .tab:hover{color:#667eea}
+        .tab.active{color:#667eea;border-bottom-color:#667eea}
+        .tab-panel{display:none}
+        .tab-panel.active{display:block}
+        .section{margin:0 0 16px}
+        .section:last-child{margin-bottom:0}
+        .section-label{font:600 11px/1.2 system-ui,sans-serif;margin:0 0 6px;color:#555;
+                       text-transform:uppercase;letter-spacing:0.5px}
+        .section-hint{font:11px/1.3 system-ui,sans-serif;color:#999;margin:4px 0 0}
+        textarea{width:100%;height:100px;resize:vertical;padding:10px;box-sizing:border-box;
+                 font:12px/1.4 ui-monospace,Consolas,monospace;border:2px solid #e0e0e0;
+                 border-radius:8px}
+        textarea:focus{outline:none;border-color:#667eea}
+        textarea.readonly{background:#f5f5f5;color:#666;height:70px;cursor:default}
+        textarea.editable{height:80px}
+        .context-label{font:500 10px/1.2 system-ui,sans-serif;color:#999;margin:12px 0 4px;
+                       text-transform:uppercase;letter-spacing:0.3px}
+        .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;
+                 position:sticky;bottom:0;background:#fff;padding-top:12px}
+        .btn{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;
+             font:600 14px system-ui,sans-serif}
+        .btn-save{background:#667eea;color:#fff}
+        .btn-save:hover{background:#5568d3}
+        .btn-reset{background:#ff6b6b;color:#fff}
+        .btn-reset:hover{background:#ee5a52}
+        .btn-cancel{background:#e0e0e0;color:#333}
+        .btn-cancel:hover{background:#d0d0d0}
+    `;
+
+        const globalSelectors = (selectorsGlobal || []).join('\n');
+        const globalExSelf = (excludeGlobal.self || []).join('\n');
+        const globalExAnc = (excludeGlobal.ancestors || []).join('\n');
+        const domSelectors = (selectorsDomain || []).join('\n');
+        const domExSelf = (excludeDomain.self || []).join('\n');
+        const domExAnc = (excludeDomain.ancestors || []).join('\n');
+
+        const wrap = document.createElement('div');
+        wrap.className = 'wrap';
+        wrap.innerHTML = `
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Edit Selectors">
+            <h3>Edit Selectors</h3>
+            <div class="tabs">
+                <button class="tab active" data-tab="global">Global</button>
+                <button class="tab" data-tab="domain">${escapeHtml(host)}</button>
+            </div>
+
+            <div class="tab-panel active" data-panel="global">
+                <div class="section">
+                    <div class="section-label">Container Selectors</div>
+                    <textarea id="g-selectors" spellcheck="false">${escapeHtml(globalSelectors)}</textarea>
+                    <div class="section-hint">CSS selectors for finding article containers. One per line.</div>
+                </div>
+                <div class="section">
+                    <div class="section-label">Excluded Elements (self)</div>
+                    <textarea id="g-ex-self" spellcheck="false">${escapeHtml(globalExSelf)}</textarea>
+                    <div class="section-hint">Elements matching these selectors are skipped. One per line.</div>
+                </div>
+                <div class="section">
+                    <div class="section-label">Excluded Containers (ancestors)</div>
+                    <textarea id="g-ex-anc" spellcheck="false">${escapeHtml(globalExAnc)}</textarea>
+                    <div class="section-hint">Text inside these containers is excluded. One per line.</div>
+                </div>
+            </div>
+
+            <div class="tab-panel" data-panel="domain">
+                <div class="section">
+                    <div class="section-label">Container Selectors</div>
+                    <div class="context-label">Global (read-only)</div>
+                    <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalSelectors)}</textarea>
+                    <div class="context-label">Domain-specific additions</div>
+                    <textarea id="d-selectors" class="editable" spellcheck="false">${escapeHtml(domSelectors)}</textarea>
+                </div>
+                <div class="section">
+                    <div class="section-label">Excluded Elements (self)</div>
+                    <div class="context-label">Global (read-only)</div>
+                    <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalExSelf)}</textarea>
+                    <div class="context-label">Domain-specific additions</div>
+                    <textarea id="d-ex-self" class="editable" spellcheck="false">${escapeHtml(domExSelf)}</textarea>
+                </div>
+                <div class="section">
+                    <div class="section-label">Excluded Containers (ancestors)</div>
+                    <div class="context-label">Global (read-only)</div>
+                    <textarea class="readonly" readonly spellcheck="false">${escapeHtml(globalExAnc)}</textarea>
+                    <div class="context-label">Domain-specific additions</div>
+                    <textarea id="d-ex-anc" class="editable" spellcheck="false">${escapeHtml(domExAnc)}</textarea>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-reset">Reset Defaults</button>
+                <button class="btn btn-cancel">Cancel</button>
+                <button class="btn btn-save">Save &amp; Reload</button>
+            </div>
+        </div>
+    `;
+        shadow.append(style, wrap);
+        document.body.appendChild(hostEl);
+
+        let activeTab = 'global';
+
+        // Tab switching
+        const tabs = shadow.querySelectorAll('.tab');
+        const panels = shadow.querySelectorAll('.tab-panel');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                activeTab = tab.dataset.tab;
+                tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === activeTab));
+                panels.forEach(p => p.classList.toggle('active', p.dataset.panel === activeTab));
+            });
+        });
+
+        const close = () => hostEl.remove();
+
+        const toLines = (val) => val.split('\n').map(l => l.trim()).filter(Boolean);
+
+        const btnSave = shadow.querySelector('.btn-save');
+        const btnReset = shadow.querySelector('.btn-reset');
+        const btnCancel = shadow.querySelector('.btn-cancel');
+
+        btnSave.addEventListener('click', async () => {
+            const data = {
+                global: {
+                    selectors: toLines(shadow.querySelector('#g-selectors').value),
+                    excludeSelf: toLines(shadow.querySelector('#g-ex-self').value),
+                    excludeAncestors: toLines(shadow.querySelector('#g-ex-anc').value)
+                },
+                domain: {
+                    selectors: toLines(shadow.querySelector('#d-selectors').value),
+                    excludeSelf: toLines(shadow.querySelector('#d-ex-self').value),
+                    excludeAncestors: toLines(shadow.querySelector('#d-ex-anc').value)
+                }
+            };
+            await onSave(data);
+            btnSave.textContent = 'Saved!';
+            btnSave.style.background = '#34a853';
+            setTimeout(() => location.reload(), 800);
+        });
+
+        btnReset.addEventListener('click', () => {
+            if (activeTab === 'global') {
+                shadow.querySelector('#g-selectors').value = (defaultSelectors || []).join('\n');
+                shadow.querySelector('#g-ex-self').value = (defaultExcludes.self || []).join('\n');
+                shadow.querySelector('#g-ex-anc').value = (defaultExcludes.ancestors || []).join('\n');
+            } else {
+                shadow.querySelector('#d-selectors').value = '';
+                shadow.querySelector('#d-ex-self').value = '';
+                shadow.querySelector('#d-ex-anc').value = '';
+            }
+            btnReset.textContent = 'Reset!';
+            setTimeout(() => { btnReset.textContent = 'Reset Defaults'; }, 1000);
+        });
+
+        btnCancel.addEventListener('click', close);
+        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+
+        wrap.setAttribute('tabindex', '-1');
+        wrap.focus();
+    }
+
+    /**
      * Inspection mode functionality for debugging article container detection
      */
 
@@ -2992,6 +3171,7 @@
             top: auto !important;
             min-width: 160px !important;
         }
+        #summarizer-overlay-singleton .summarizer-badge-settings .selectors-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
             width: 100% !important;
@@ -3004,11 +3184,13 @@
             border-bottom: none !important;
             background: transparent !important;
         }
+        #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
             margin-top: 4px !important;
             padding-top: 8px !important;
             border-top: none !important;
         }
+        #summarizer-overlay-singleton .summarizer-badge-settings .selectors-btn:hover,
         #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn:hover,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn:hover {
             background: #f3f4f6 !important;
@@ -3394,11 +3576,13 @@
         #summarizer-overlay-singleton.summarizer-dark .summarizer-status {
             color: #9ca3af !important;
         }
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .selectors-btn,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn {
             border-top-color: #374151 !important;
             color: #d1d5db !important;
         }
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .selectors-btn:hover,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn:hover,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn:hover {
             background: #374151 !important;
@@ -3478,7 +3662,7 @@
     /**
      * Create the main overlay
      */
-    async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight) {
+    async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors) {
         // Check for existing overlays (can be duplicates if script runs multiple times)
         const existingOverlays = document.querySelectorAll(`#${OVERLAY_ID}`);
 
@@ -3580,6 +3764,7 @@
                                 <input type="text" class="summarizer-shortcut-input" data-shortcut="small" value="${formatShortcut(shortcuts.small)}" readonly placeholder="Click to set">
                             </div>
                         </div>
+                        <button class="summarizer-btn selectors-btn">Edit Selectors</button>
                         <button class="summarizer-btn inspect-btn">Inspect Elements</button>
                         <button class="summarizer-btn highlight-btn">Show Included Elements</button>
                     </div>
@@ -3611,6 +3796,12 @@
                 const size = btn.dataset.size;
                 onDigest(size);
             });
+        });
+
+        const selectorsBtn = overlay.querySelector('.selectors-btn');
+        selectorsBtn.addEventListener('click', () => {
+            settingsPopover?.classList.remove('open');
+            onEditSelectors?.();
         });
 
         inspectBtn.addEventListener('click', () => {
@@ -4128,9 +4319,9 @@
     /**
      * Ensure overlay exists (recreate if removed)
      */
-    function ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight) {
+    function ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors) {
         if (!overlay || !overlay.isConnected) {
-            createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight);
+            createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors);
         }
     }
 
@@ -4452,98 +4643,36 @@
             });
         });
 
-        // Selector configuration menu commands
-        GM_registerMenuCommand?.('--- Container Selectors ---', () => {});
-
-        GM_registerMenuCommand?.('Edit GLOBAL container selectors', () => {
-            openEditor({
-                title: 'Global container selectors (all domains)',
-                mode: 'list',
-                initial: SELECTORS_GLOBAL,
-                hint: 'CSS selectors for finding article containers. One per line. Applied to all domains.',
-                onSave: async (lines) => {
-                    const clean = lines.filter(Boolean).map(s => s.trim()).filter(Boolean);
-                    SELECTORS_GLOBAL = clean.length ? clean : [...DEFAULT_SELECTORS];
+        // Selector configuration
+        function handleEditSelectors() {
+            openSelectorEditor({
+                host: HOST,
+                selectorsGlobal: SELECTORS_GLOBAL,
+                excludeGlobal: EXCLUDE_GLOBAL,
+                selectorsDomain: SELECTORS_DOMAIN,
+                excludeDomain: EXCLUDE_DOMAIN,
+                defaultSelectors: DEFAULT_SELECTORS,
+                defaultExcludes: DEFAULT_EXCLUDES,
+                onSave: async (data) => {
+                    // Global
+                    SELECTORS_GLOBAL = data.global.selectors.length ? data.global.selectors : [...DEFAULT_SELECTORS];
+                    EXCLUDE_GLOBAL.self = data.global.excludeSelf;
+                    EXCLUDE_GLOBAL.ancestors = data.global.excludeAncestors;
                     await storage.set(STORAGE_KEYS.SELECTORS_GLOBAL, JSON.stringify(SELECTORS_GLOBAL));
-                    location.reload();
-                }
-            });
-        });
-
-        GM_registerMenuCommand?.('Edit GLOBAL exclusions: elements (self)', () => {
-            openEditor({
-                title: 'Global excluded elements (all domains)',
-                mode: 'list',
-                initial: EXCLUDE_GLOBAL.self || [],
-                hint: 'Elements matching these selectors will be excluded. One per line.',
-                onSave: async (lines) => {
-                    EXCLUDE_GLOBAL.self = lines;
                     await storage.set(STORAGE_KEYS.EXCLUDES_GLOBAL, JSON.stringify(EXCLUDE_GLOBAL));
-                    location.reload();
-                }
-            });
-        });
 
-        GM_registerMenuCommand?.('Edit GLOBAL exclusions: containers (ancestors)', () => {
-            openEditor({
-                title: 'Global excluded containers (all domains)',
-                mode: 'list',
-                initial: EXCLUDE_GLOBAL.ancestors || [],
-                hint: 'Text inside these containers will be excluded. One per line (e.g., .sidebar, nav, footer).',
-                onSave: async (lines) => {
-                    EXCLUDE_GLOBAL.ancestors = lines;
-                    await storage.set(STORAGE_KEYS.EXCLUDES_GLOBAL, JSON.stringify(EXCLUDE_GLOBAL));
-                    location.reload();
-                }
-            });
-        });
-
-        GM_registerMenuCommand?.(`Edit DOMAIN additions: container selectors (${HOST})`, () => {
-            openEditor({
-                title: `Domain-specific container selectors for ${HOST}`,
-                mode: 'domain',
-                initial: SELECTORS_DOMAIN,
-                globalItems: SELECTORS_GLOBAL,
-                hint: 'Domain-specific selectors are added to global ones. Edit only the bottom section.',
-                onSave: async (lines) => {
-                    DOMAIN_SELECTORS[HOST] = lines;
+                    // Domain
+                    DOMAIN_SELECTORS[HOST] = data.domain.selectors;
+                    if (!DOMAIN_EXCLUDES[HOST]) DOMAIN_EXCLUDES[HOST] = { self: [], ancestors: [] };
+                    DOMAIN_EXCLUDES[HOST].self = data.domain.excludeSelf;
+                    DOMAIN_EXCLUDES[HOST].ancestors = data.domain.excludeAncestors;
                     await storage.set(STORAGE_KEYS.DOMAIN_SELECTORS, JSON.stringify(DOMAIN_SELECTORS));
-                    location.reload();
-                }
-            });
-        });
-
-        GM_registerMenuCommand?.(`Edit DOMAIN additions: exclusions elements (${HOST})`, () => {
-            openEditor({
-                title: `Domain-specific excluded elements for ${HOST}`,
-                mode: 'domain',
-                initial: EXCLUDE_DOMAIN.self || [],
-                globalItems: EXCLUDE_GLOBAL.self || [],
-                hint: 'Domain-specific excludes are added to global ones. Edit only the bottom section.',
-                onSave: async (lines) => {
-                    if (!DOMAIN_EXCLUDES[HOST]) DOMAIN_EXCLUDES[HOST] = { self: [], ancestors: [] };
-                    DOMAIN_EXCLUDES[HOST].self = lines;
                     await storage.set(STORAGE_KEYS.DOMAIN_EXCLUDES, JSON.stringify(DOMAIN_EXCLUDES));
-                    location.reload();
                 }
             });
-        });
+        }
 
-        GM_registerMenuCommand?.(`Edit DOMAIN additions: exclusions containers (${HOST})`, () => {
-            openEditor({
-                title: `Domain-specific excluded containers for ${HOST}`,
-                mode: 'domain',
-                initial: EXCLUDE_DOMAIN.ancestors || [],
-                globalItems: EXCLUDE_GLOBAL.ancestors || [],
-                hint: 'Domain-specific excludes are added to global ones. Edit only the bottom section.',
-                onSave: async (lines) => {
-                    if (!DOMAIN_EXCLUDES[HOST]) DOMAIN_EXCLUDES[HOST] = { self: [], ancestors: [] };
-                    DOMAIN_EXCLUDES[HOST].ancestors = lines;
-                    await storage.set(STORAGE_KEYS.DOMAIN_EXCLUDES, JSON.stringify(DOMAIN_EXCLUDES));
-                    location.reload();
-                }
-            });
-        });
+        GM_registerMenuCommand?.('Edit Selectors', handleEditSelectors);
 
         // Toggles
         GM_registerMenuCommand?.('--- Toggles ---', () => {});
@@ -4610,7 +4739,7 @@
         }
 
         // Create overlay
-        createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight);
+        createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
 
         // Auto-simplify if enabled
         if (AUTO_SIMPLIFY) {
@@ -4625,7 +4754,7 @@
 
         // Observe DOM changes to ensure overlay persists
         const mo = new MutationObserver(() => {
-            ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight);
+            ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
         });
         mo.observe(document.body, { childList: true, subtree: false });
 

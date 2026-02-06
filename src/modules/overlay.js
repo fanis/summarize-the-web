@@ -275,6 +275,7 @@ export function ensureCSS() {
             top: auto !important;
             min-width: 160px !important;
         }
+        #summarizer-overlay-singleton .summarizer-badge-settings .selectors-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
             width: 100% !important;
@@ -287,11 +288,13 @@ export function ensureCSS() {
             border-bottom: none !important;
             background: transparent !important;
         }
+        #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
             margin-top: 4px !important;
             padding-top: 8px !important;
             border-top: none !important;
         }
+        #summarizer-overlay-singleton .summarizer-badge-settings .selectors-btn:hover,
         #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn:hover,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn:hover {
             background: #f3f4f6 !important;
@@ -677,11 +680,13 @@ export function ensureCSS() {
         #summarizer-overlay-singleton.summarizer-dark .summarizer-status {
             color: #9ca3af !important;
         }
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .selectors-btn,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn {
             border-top-color: #374151 !important;
             color: #d1d5db !important;
         }
+        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .selectors-btn:hover,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn:hover,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn:hover {
             background: #374151 !important;
@@ -761,7 +766,7 @@ const CREATION_LOCK_ATTR = 'data-summarizer-creating';
 /**
  * Create the main overlay
  */
-export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight) {
+export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors) {
     // Check for existing overlays (can be duplicates if script runs multiple times)
     const existingOverlays = document.querySelectorAll(`#${OVERLAY_ID}`);
 
@@ -863,6 +868,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
                                 <input type="text" class="summarizer-shortcut-input" data-shortcut="small" value="${formatShortcut(shortcuts.small)}" readonly placeholder="Click to set">
                             </div>
                         </div>
+                        <button class="summarizer-btn selectors-btn">Edit Selectors</button>
                         <button class="summarizer-btn inspect-btn">Inspect Elements</button>
                         <button class="summarizer-btn highlight-btn">Show Included Elements</button>
                     </div>
@@ -894,6 +900,12 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
             const size = btn.dataset.size;
             onDigest(size);
         });
+    });
+
+    const selectorsBtn = overlay.querySelector('.selectors-btn');
+    selectorsBtn.addEventListener('click', () => {
+        settingsPopover?.classList.remove('open');
+        onEditSelectors?.();
     });
 
     inspectBtn.addEventListener('click', () => {
@@ -1411,9 +1423,9 @@ function expandOverlay() {
 /**
  * Ensure overlay exists (recreate if removed)
  */
-export function ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight) {
+export function ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors) {
     if (!overlay || !overlay.isConnected) {
-        createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight);
+        createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors);
     }
 }
 
