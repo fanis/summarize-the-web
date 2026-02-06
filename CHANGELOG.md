@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-02-06
+
+### Added
+- **Edit Selectors Dialog**: Unified dialog accessible from badge UI and GM menu for editing global and domain-specific CSS selectors
+- Segmented control tabs (iOS-style) for better tab visibility in Edit Selectors dialog
+- Comprehensive test suite for Edit Selectors dialog (39 tests)
+
+### Fixed
+- Action button hover colors: explicit color prevents unreadable text on hover
+- Edit Selectors modal anchored to top so height changes expand downward without jumping
+
 ## [2.1.0] - 2026-01-29
 
 ### Added
