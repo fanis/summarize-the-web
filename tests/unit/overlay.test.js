@@ -260,6 +260,15 @@ describe('Overlay Module', () => {
     it('includes dark mode styles for selectors-btn', () => {
       expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-badge-settings .selectors-btn');
     });
+
+    it('includes explicit hover color for action buttons in light mode', () => {
+      // Hover should have explicit color to prevent purple-on-purple
+      expect(createdElement.textContent).toMatch(/\.selectors-btn:hover[^}]*color:\s*#4338ca/);
+    });
+
+    it('includes explicit hover color for action buttons in dark mode', () => {
+      expect(createdElement.textContent).toMatch(/\.summarizer-dark[^}]*\.selectors-btn:hover[^}]*color:\s*#a5b4fc/);
+    });
   });
 
   describe('CSS specifications', () => {

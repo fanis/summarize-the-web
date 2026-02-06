@@ -758,17 +758,18 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
     const style = document.createElement('style');
     style.textContent = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
-              display:flex;align-items:center;justify-content:center;overflow-y:auto}
+              display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0}
         .modal{background:#fff;max-width:700px;width:94%;border-radius:12px;
                box-shadow:0 10px 40px rgba(0,0,0,.3);padding:24px;box-sizing:border-box;
-               margin:20px;max-height:90vh;overflow-y:auto}
+               max-height:calc(100vh - 80px);overflow-y:auto}
         h3{margin:0 0 16px;font:600 18px/1.2 system-ui,sans-serif;color:#1a1a1a}
-        .tabs{display:flex;gap:4px;margin:0 0 20px;border-bottom:2px solid #e0e0e0;padding-bottom:0}
-        .tab{padding:10px 20px;border:none;background:none;cursor:pointer;
-             font:600 13px/1.2 system-ui,sans-serif;color:#666;border-bottom:2px solid transparent;
-             margin-bottom:-2px;transition:all 0.15s}
-        .tab:hover{color:#667eea}
-        .tab.active{color:#667eea;border-bottom-color:#667eea}
+        .tabs{display:inline-flex;margin:0 0 20px;background:#e5e7eb;border-radius:8px;padding:4px}
+        .tab{padding:8px 16px;border:none;background:none;cursor:pointer;
+             font:600 13px/1.2 system-ui,sans-serif;color:#666;border-radius:6px;
+             transition:all 0.15s;white-space:nowrap}
+        .tab:hover{color:#4338ca}
+        .tab.active{background:#fff;color:#667eea;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+        .tab-content{transition:height 0.2s ease}
         .tab-panel{display:none}
         .tab-panel.active{display:block}
         .section{margin:0 0 16px}
@@ -813,6 +814,7 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
                 <button class="tab" data-tab="domain">${escapeHtml(host)}</button>
             </div>
 
+            <div class="tab-content">
             <div class="tab-panel active" data-panel="global">
                 <div class="section">
                     <div class="section-label">Container Selectors</div>
@@ -853,6 +855,7 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
                     <div class="context-label">Domain-specific additions</div>
                     <textarea id="d-ex-anc" class="editable" spellcheck="false">${escapeHtml(domExAnc)}</textarea>
                 </div>
+            </div>
             </div>
 
             <div class="actions">

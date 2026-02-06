@@ -362,4 +362,31 @@ describe('openSelectorEditor', () => {
       expect(shadow.querySelector('#d-selectors').value).toBe('');
     });
   });
+
+  describe('CSS styling', () => {
+    it('uses segmented control style for tabs (background on container)', () => {
+      const { shadow } = openDialog();
+      const style = shadow.querySelector('style').textContent;
+      expect(style).toMatch(/\.tabs\{[^}]*background/);
+    });
+
+    it('active tab has white background for segmented control look', () => {
+      const { shadow } = openDialog();
+      const style = shadow.querySelector('style').textContent;
+      expect(style).toMatch(/\.tab\.active\{[^}]*background:#fff/);
+    });
+
+    it('modal wrapper uses flex-start alignment for top anchoring', () => {
+      const { shadow } = openDialog();
+      const style = shadow.querySelector('style').textContent;
+      expect(style).toMatch(/\.wrap\{[^}]*align-items:flex-start/);
+    });
+
+    it('tab panels use display:none/block for dynamic height', () => {
+      const { shadow } = openDialog();
+      const style = shadow.querySelector('style').textContent;
+      expect(style).toMatch(/\.tab-panel\{[^}]*display:none/);
+      expect(style).toMatch(/\.tab-panel\.active\{[^}]*display:block/);
+    });
+  });
 });

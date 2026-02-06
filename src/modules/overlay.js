@@ -298,6 +298,7 @@ export function ensureCSS() {
         #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn:hover,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn:hover {
             background: #f3f4f6 !important;
+            color: #4338ca !important;
         }
         #summarizer-overlay-singleton .summarizer-branding {
             font-size: 8px !important;
@@ -690,6 +691,7 @@ export function ensureCSS() {
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn:hover,
         #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn:hover {
             background: #374151 !important;
+            color: #a5b4fc !important;
         }
         #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-popover {
             background: #1f2937 !important;
