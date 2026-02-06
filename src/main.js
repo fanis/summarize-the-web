@@ -7,7 +7,7 @@ import { DigestCache } from './modules/cache.js';
 import {
     openEditor, openInfo, openKeyDialog, openWelcomeDialog,
     openSimplificationStyleDialog, openModelSelectionDialog, openCustomPromptDialog,
-    showStats, openDomainEditor
+    showStats, openDomainEditor, openSelectorEditor
 } from './modules/settings.js';
 import { enterInspectionMode, showSummaryHighlight } from './modules/inspection.js';
 import { getTextToDigest } from './modules/extraction.js';
@@ -332,98 +332,36 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         });
     });
 
-    // Selector configuration menu commands
-    GM_registerMenuCommand?.('--- Container Selectors ---', () => {});
-
-    GM_registerMenuCommand?.('Edit GLOBAL container selectors', () => {
-        openEditor({
-            title: 'Global container selectors (all domains)',
-            mode: 'list',
-            initial: SELECTORS_GLOBAL,
-            hint: 'CSS selectors for finding article containers. One per line. Applied to all domains.',
-            onSave: async (lines) => {
-                const clean = lines.filter(Boolean).map(s => s.trim()).filter(Boolean);
-                SELECTORS_GLOBAL = clean.length ? clean : [...DEFAULT_SELECTORS];
+    // Selector configuration
+    function handleEditSelectors() {
+        openSelectorEditor({
+            host: HOST,
+            selectorsGlobal: SELECTORS_GLOBAL,
+            excludeGlobal: EXCLUDE_GLOBAL,
+            selectorsDomain: SELECTORS_DOMAIN,
+            excludeDomain: EXCLUDE_DOMAIN,
+            defaultSelectors: DEFAULT_SELECTORS,
+            defaultExcludes: DEFAULT_EXCLUDES,
+            onSave: async (data) => {
+                // Global
+                SELECTORS_GLOBAL = data.global.selectors.length ? data.global.selectors : [...DEFAULT_SELECTORS];
+                EXCLUDE_GLOBAL.self = data.global.excludeSelf;
+                EXCLUDE_GLOBAL.ancestors = data.global.excludeAncestors;
                 await storage.set(STORAGE_KEYS.SELECTORS_GLOBAL, JSON.stringify(SELECTORS_GLOBAL));
-                location.reload();
-            }
-        });
-    });
-
-    GM_registerMenuCommand?.('Edit GLOBAL exclusions: elements (self)', () => {
-        openEditor({
-            title: 'Global excluded elements (all domains)',
-            mode: 'list',
-            initial: EXCLUDE_GLOBAL.self || [],
-            hint: 'Elements matching these selectors will be excluded. One per line.',
-            onSave: async (lines) => {
-                EXCLUDE_GLOBAL.self = lines;
                 await storage.set(STORAGE_KEYS.EXCLUDES_GLOBAL, JSON.stringify(EXCLUDE_GLOBAL));
-                location.reload();
-            }
-        });
-    });
 
-    GM_registerMenuCommand?.('Edit GLOBAL exclusions: containers (ancestors)', () => {
-        openEditor({
-            title: 'Global excluded containers (all domains)',
-            mode: 'list',
-            initial: EXCLUDE_GLOBAL.ancestors || [],
-            hint: 'Text inside these containers will be excluded. One per line (e.g., .sidebar, nav, footer).',
-            onSave: async (lines) => {
-                EXCLUDE_GLOBAL.ancestors = lines;
-                await storage.set(STORAGE_KEYS.EXCLUDES_GLOBAL, JSON.stringify(EXCLUDE_GLOBAL));
-                location.reload();
-            }
-        });
-    });
-
-    GM_registerMenuCommand?.(`Edit DOMAIN additions: container selectors (${HOST})`, () => {
-        openEditor({
-            title: `Domain-specific container selectors for ${HOST}`,
-            mode: 'domain',
-            initial: SELECTORS_DOMAIN,
-            globalItems: SELECTORS_GLOBAL,
-            hint: 'Domain-specific selectors are added to global ones. Edit only the bottom section.',
-            onSave: async (lines) => {
-                DOMAIN_SELECTORS[HOST] = lines;
+                // Domain
+                DOMAIN_SELECTORS[HOST] = data.domain.selectors;
+                if (!DOMAIN_EXCLUDES[HOST]) DOMAIN_EXCLUDES[HOST] = { self: [], ancestors: [] };
+                DOMAIN_EXCLUDES[HOST].self = data.domain.excludeSelf;
+                DOMAIN_EXCLUDES[HOST].ancestors = data.domain.excludeAncestors;
                 await storage.set(STORAGE_KEYS.DOMAIN_SELECTORS, JSON.stringify(DOMAIN_SELECTORS));
-                location.reload();
-            }
-        });
-    });
-
-    GM_registerMenuCommand?.(`Edit DOMAIN additions: exclusions elements (${HOST})`, () => {
-        openEditor({
-            title: `Domain-specific excluded elements for ${HOST}`,
-            mode: 'domain',
-            initial: EXCLUDE_DOMAIN.self || [],
-            globalItems: EXCLUDE_GLOBAL.self || [],
-            hint: 'Domain-specific excludes are added to global ones. Edit only the bottom section.',
-            onSave: async (lines) => {
-                if (!DOMAIN_EXCLUDES[HOST]) DOMAIN_EXCLUDES[HOST] = { self: [], ancestors: [] };
-                DOMAIN_EXCLUDES[HOST].self = lines;
                 await storage.set(STORAGE_KEYS.DOMAIN_EXCLUDES, JSON.stringify(DOMAIN_EXCLUDES));
-                location.reload();
             }
         });
-    });
+    }
 
-    GM_registerMenuCommand?.(`Edit DOMAIN additions: exclusions containers (${HOST})`, () => {
-        openEditor({
-            title: `Domain-specific excluded containers for ${HOST}`,
-            mode: 'domain',
-            initial: EXCLUDE_DOMAIN.ancestors || [],
-            globalItems: EXCLUDE_GLOBAL.ancestors || [],
-            hint: 'Domain-specific excludes are added to global ones. Edit only the bottom section.',
-            onSave: async (lines) => {
-                if (!DOMAIN_EXCLUDES[HOST]) DOMAIN_EXCLUDES[HOST] = { self: [], ancestors: [] };
-                DOMAIN_EXCLUDES[HOST].ancestors = lines;
-                await storage.set(STORAGE_KEYS.DOMAIN_EXCLUDES, JSON.stringify(DOMAIN_EXCLUDES));
-                location.reload();
-            }
-        });
-    });
+    GM_registerMenuCommand?.('Edit Selectors', handleEditSelectors);
 
     // Toggles
     GM_registerMenuCommand?.('--- Toggles ---', () => {});
@@ -490,7 +428,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     }
 
     // Create overlay
-    createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight);
+    createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
 
     // Auto-simplify if enabled
     if (AUTO_SIMPLIFY) {
@@ -505,7 +443,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     // Observe DOM changes to ensure overlay persists
     const mo = new MutationObserver(() => {
-        ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight);
+        ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
     });
     mo.observe(document.body, { childList: true, subtree: false });
 
