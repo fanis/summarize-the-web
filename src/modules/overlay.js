@@ -16,6 +16,9 @@ let currentTheme = 'auto';
 let mediaQueryList = null;
 let shortcuts = { ...DEFAULT_SHORTCUTS };
 let keyboardHandler = null;
+let savedBodyOverflow = null;
+let savedHtmlOverflow = null;
+let scrollLocked = false;
 
 export const BADGE_WIDTH = 150;
 
@@ -186,6 +189,7 @@ function getSummaryOverlayShadowCSS() {
             color: #2d3748;
             max-height: calc(90vh - 180px);
             overflow-y: auto;
+            overscroll-behavior: contain;
         }
 
         .summarizer-summary-content-inner {
@@ -685,6 +689,7 @@ export function ensureCSS() {
             color: #2d3748 !important;
             max-height: calc(90vh - 180px) !important;
             overflow-y: auto !important;
+            overscroll-behavior: contain !important;
         }
 
         .summarizer-summary-content-inner {
@@ -1497,6 +1502,30 @@ export function updateOverlayStatus(status, mode = null, fromCache = false) {
 }
 
 /**
+ * Lock body scroll to prevent background scrolling while modal is open
+ */
+function lockBodyScroll() {
+    if (scrollLocked) return;
+    scrollLocked = true;
+    savedBodyOverflow = document.body.style.overflow;
+    savedHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+}
+
+/**
+ * Restore body scroll after modal is closed
+ */
+function unlockBodyScroll() {
+    if (!scrollLocked) return;
+    scrollLocked = false;
+    document.body.style.overflow = savedBodyOverflow ?? '';
+    document.documentElement.style.overflow = savedHtmlOverflow ?? '';
+    savedBodyOverflow = null;
+    savedHtmlOverflow = null;
+}
+
+/**
  * Show summary overlay (uses Shadow DOM for CSS isolation)
  */
 export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, onRestore, storage) {
@@ -1577,6 +1606,7 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     `;
 
     document.body.appendChild(summaryOverlay);
+    lockBodyScroll();
 
     // Get references to shadow DOM elements
     const innerOverlay = summaryOverlayShadow.querySelector('.summarizer-summary-overlay');
@@ -1699,6 +1729,7 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
  * Remove summary overlay
  */
 export function removeSummaryOverlay() {
+    unlockBodyScroll();
     if (summaryOverlay && summaryOverlay.isConnected) {
         summaryOverlay.remove();
     }

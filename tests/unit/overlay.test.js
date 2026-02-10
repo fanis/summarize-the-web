@@ -375,6 +375,102 @@ describe('Overlay Module', () => {
     });
   });
 
+  describe('Body scroll locking', () => {
+    it('locks body scroll when summary overlay is shown', async () => {
+      const bodyStyle = { overflow: '' };
+      const htmlStyle = { overflow: '' };
+      const shadowRoot = {
+        innerHTML: '',
+        querySelector: vi.fn().mockReturnValue({
+          style: { setProperty: vi.fn() },
+          classList: { add: vi.fn(), remove: vi.fn(), toggle: vi.fn(), contains: vi.fn() },
+          addEventListener: vi.fn()
+        }),
+        querySelectorAll: vi.fn().mockReturnValue([])
+      };
+      const overlayEl = {
+        setAttribute: vi.fn(),
+        attachShadow: vi.fn().mockReturnValue(shadowRoot),
+        isConnected: false
+      };
+      global.document = {
+        getElementById: vi.fn().mockReturnValue(null),
+        createElement: vi.fn().mockReturnValue(overlayEl),
+        head: { appendChild: vi.fn() },
+        body: {
+          appendChild: vi.fn(),
+          style: bodyStyle,
+          hasAttribute: vi.fn().mockReturnValue(false),
+          setAttribute: vi.fn(),
+          removeAttribute: vi.fn()
+        },
+        documentElement: { style: htmlStyle },
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      };
+      global.window = { matchMedia: vi.fn().mockReturnValue({ matches: false }) };
+
+      vi.resetModules();
+      const { showSummaryOverlay } = await import('../../src/modules/overlay.js');
+      const mockStorage = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
+      await showSummaryOverlay('Test summary', 'digest_large', null, { value: true }, vi.fn(), mockStorage);
+
+      expect(bodyStyle.overflow).toBe('hidden');
+      expect(htmlStyle.overflow).toBe('hidden');
+    });
+
+    it('restores body scroll when summary overlay is removed', async () => {
+      const bodyStyle = { overflow: 'auto' };
+      const htmlStyle = { overflow: 'visible' };
+      const shadowRoot = {
+        innerHTML: '',
+        querySelector: vi.fn().mockReturnValue({
+          style: { setProperty: vi.fn() },
+          classList: { add: vi.fn(), remove: vi.fn(), toggle: vi.fn(), contains: vi.fn() },
+          addEventListener: vi.fn()
+        }),
+        querySelectorAll: vi.fn().mockReturnValue([])
+      };
+      const overlayEl = {
+        setAttribute: vi.fn(),
+        attachShadow: vi.fn().mockReturnValue(shadowRoot),
+        isConnected: true,
+        remove: vi.fn()
+      };
+      global.document = {
+        getElementById: vi.fn().mockReturnValue(null),
+        createElement: vi.fn().mockReturnValue(overlayEl),
+        head: { appendChild: vi.fn() },
+        body: {
+          appendChild: vi.fn(),
+          style: bodyStyle,
+          hasAttribute: vi.fn().mockReturnValue(false),
+          setAttribute: vi.fn(),
+          removeAttribute: vi.fn()
+        },
+        documentElement: { style: htmlStyle },
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      };
+      global.window = { matchMedia: vi.fn().mockReturnValue({ matches: false }) };
+
+      vi.resetModules();
+      const { showSummaryOverlay, removeSummaryOverlay } = await import('../../src/modules/overlay.js');
+      const mockStorage = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
+      await showSummaryOverlay('Test summary', 'digest_large', null, { value: true }, vi.fn(), mockStorage);
+
+      // Body should now be locked
+      expect(bodyStyle.overflow).toBe('hidden');
+      expect(htmlStyle.overflow).toBe('hidden');
+
+      removeSummaryOverlay();
+
+      // Body overflow should be restored to original values
+      expect(bodyStyle.overflow).toBe('auto');
+      expect(htmlStyle.overflow).toBe('visible');
+    });
+  });
+
   describe('Summary overlay display settings CSS', () => {
     let createdElement;
 
@@ -402,6 +498,10 @@ describe('Overlay Module', () => {
       // Fallback ensures styles work even if variables not set
       expect(createdElement.textContent).toMatch(/--summarizer-font-size,\s*\d+px/);
       expect(createdElement.textContent).toMatch(/--summarizer-line-height,\s*[\d.]+/);
+    });
+
+    it('sets overscroll-behavior contain on summary content to prevent scroll chaining', () => {
+      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*overscroll-behavior:\s*contain/);
     });
 
     it('uses !important on summary content font properties to prevent site overrides', () => {

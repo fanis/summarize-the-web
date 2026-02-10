@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.3.0
+// @version      2.3.1
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -2932,6 +2932,9 @@
     let mediaQueryList = null;
     let shortcuts = { ...DEFAULT_SHORTCUTS };
     let keyboardHandler = null;
+    let savedBodyOverflow = null;
+    let savedHtmlOverflow = null;
+    let scrollLocked = false;
 
     const BADGE_WIDTH = 150;
 
@@ -3102,6 +3105,7 @@
             color: #2d3748;
             max-height: calc(90vh - 180px);
             overflow-y: auto;
+            overscroll-behavior: contain;
         }
 
         .summarizer-summary-content-inner {
@@ -3596,6 +3600,7 @@
             color: #2d3748 !important;
             max-height: calc(90vh - 180px) !important;
             overflow-y: auto !important;
+            overscroll-behavior: contain !important;
         }
 
         .summarizer-summary-content-inner {
@@ -4408,6 +4413,30 @@
     }
 
     /**
+     * Lock body scroll to prevent background scrolling while modal is open
+     */
+    function lockBodyScroll() {
+        if (scrollLocked) return;
+        scrollLocked = true;
+        savedBodyOverflow = document.body.style.overflow;
+        savedHtmlOverflow = document.documentElement.style.overflow;
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+    }
+
+    /**
+     * Restore body scroll after modal is closed
+     */
+    function unlockBodyScroll() {
+        if (!scrollLocked) return;
+        scrollLocked = false;
+        document.body.style.overflow = savedBodyOverflow ?? '';
+        document.documentElement.style.overflow = savedHtmlOverflow ?? '';
+        savedBodyOverflow = null;
+        savedHtmlOverflow = null;
+    }
+
+    /**
      * Show summary overlay (uses Shadow DOM for CSS isolation)
      */
     async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, onRestore, storage) {
@@ -4488,6 +4517,7 @@
     `;
 
         document.body.appendChild(summaryOverlay);
+        lockBodyScroll();
 
         // Get references to shadow DOM elements
         const innerOverlay = summaryOverlayShadow.querySelector('.summarizer-summary-overlay');
@@ -4610,6 +4640,7 @@
      * Remove summary overlay
      */
     function removeSummaryOverlay() {
+        unlockBodyScroll();
         if (summaryOverlay && summaryOverlay.isConnected) {
             summaryOverlay.remove();
         }
