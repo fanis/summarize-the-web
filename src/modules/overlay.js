@@ -573,6 +573,10 @@ export function ensureCSS() {
             top: auto !important;
             min-width: 160px !important;
         }
+        #summarizer-overlay-singleton .summarizer-badge-settings .summarizer-settings-popover.popover-below {
+            bottom: auto !important;
+            top: 28px !important;
+        }
         #summarizer-overlay-singleton .summarizer-badge-settings .selectors-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
         #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
@@ -1232,6 +1236,23 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
 
     settingsBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const opening = !settingsPopover.classList.contains('open');
+        if (opening) {
+            // Measure available space above the button
+            const btnRect = settingsBtn.getBoundingClientRect();
+            // Temporarily show offscreen to measure popover height
+            settingsPopover.style.visibility = 'hidden';
+            settingsPopover.classList.add('open');
+            const popoverHeight = settingsPopover.offsetHeight;
+            settingsPopover.classList.remove('open');
+            settingsPopover.style.visibility = '';
+            // Show below if not enough room above
+            if (btnRect.top < popoverHeight + 8) {
+                settingsPopover.classList.add('popover-below');
+            } else {
+                settingsPopover.classList.remove('popover-below');
+            }
+        }
         settingsPopover.classList.toggle('open');
     });
 
