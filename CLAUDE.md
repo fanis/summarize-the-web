@@ -60,6 +60,13 @@ Core modules in `src/modules/`:
 - **Domain allow/deny lists**: Script can run on allowlisted domains only (default) or everywhere except denylisted domains
 - **Caching**: Summaries are cached by content hash to minimize API costs
 
+### UI Patterns
+
+- **Shadow DOM for injected UI**: Summary overlay and Edit Selectors dialog use Shadow DOM for complete CSS isolation from host pages. Use this pattern for any UI that must render consistently across all sites.
+- **stopPropagation on handlers**: Add `e.stopPropagation()` to click handlers in injected UI to prevent site scripts from interfering.
+- **Dual CSS in overlay.js**: Badge CSS lives in `ensureCSS()` (with `!important`), shadow DOM CSS in `getSummaryOverlayShadowCSS()`. Shared styles (popover, settings options, dark mode) must be updated in both places.
+- **Viewport-aware positioning**: Badge is draggable, so popovers/menus must check available space and flip direction (see `popover-below` class).
+
 ### Data Flow
 
 1. User clicks summarize button in overlay
@@ -78,7 +85,7 @@ Before creating a new release:
 
 2. Update `CHANGELOG.md` with new version section
 
-3. Update `README.md` if features changed
+3. Update `README.md`: always bump the "Latest Version" line in the header, plus any feature descriptions if relevant
 
 4. Run tests: `npm run test:all`
 

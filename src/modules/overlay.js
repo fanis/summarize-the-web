@@ -527,6 +527,7 @@ export function ensureCSS() {
             font-weight: 500 !important;
             transition: all 0.2s !important;
             white-space: nowrap !important;
+            text-align: center !important;
         }
         #summarizer-overlay-singleton .summarizer-btn:hover {
             background: #667eea !important;

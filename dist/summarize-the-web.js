@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.3.2
+// @version      2.3.3
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -3438,6 +3438,7 @@
             font-weight: 500 !important;
             transition: all 0.2s !important;
             white-space: nowrap !important;
+            text-align: center !important;
         }
         #summarizer-overlay-singleton .summarizer-btn:hover {
             background: #667eea !important;

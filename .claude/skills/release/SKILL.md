@@ -29,7 +29,7 @@ Update version in:
 
 Check that these reflect the new version and changes:
 - `CHANGELOG.md` - has section for new version with changes
-- `README.md` - version number updated
+- `README.md` - update the "Latest Version" line in the header to the new version number
 
 If missing, update them. Ask user to confirm changes look correct.
 
