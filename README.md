@@ -42,6 +42,8 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 
 4. Configure your API key via the userscript menu
 
+![API key dialog](screenshots/api-key-dialog.jpg)
+
 ## Development
 
 This project uses a modular ES6 architecture with a build system for easy development.
@@ -122,12 +124,18 @@ Click the gear icon on the badge to access display settings, keyboard shortcuts,
 
 Access these via your userscript manager's menu:
 
+![Userscript manager menu](screenshots/userscript-menu.jpg)
+
 **Configuration**
 - Set / Validate OpenAI API key
 - AI model selection (choose from 5 models with different pricing/quality)
 - Configure custom prompts
 - Simplification style (Conservative/Balanced/Aggressive)
 - Minimum text length (configure minimum characters required for summarization)
+
+![AI Model Selection](screenshots/model-selection.jpg)
+
+![Simplification Style](screenshots/simplification-style.jpg)
 
 **Domain Controls**
 - Toggle between ALLOW and DENY mode
