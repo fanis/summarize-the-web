@@ -4,6 +4,8 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 
 > **Latest Version**: 2.3.3 | [See What's New](CHANGELOG.md)
 
+![Badge UI and summary result](screenshots/hero.jpg)
+
 ## Features
 
 - **Two Summary Sizes**: Choose between Large (50%) or Small (20%) summaries
@@ -96,6 +98,8 @@ For detailed build documentation, see [BUILD.md](BUILD.md).
 4. Choose **Large** (50% length) or **Small** (20% length) summary
 5. View your summary in the overlay that appears
 
+![Summary overlay with article summary](screenshots/summary-overlay.jpg)
+
 ### Summarizing Selected Text
 
 1. Highlight any text on a webpage (minimum 100 characters by default, configurable)
@@ -107,6 +111,12 @@ For detailed build documentation, see [BUILD.md](BUILD.md).
 - **Large**: Creates a summary at ~50% of the original length
 - **Small**: Creates a concise summary at ~20% of the original length
 - Click the **X** button in the summary overlay to close it
+
+### Badge Settings
+
+Click the gear icon on the badge to access display settings, keyboard shortcuts, and tools.
+
+![Badge settings popover](screenshots/badge-settings.jpg)
 
 ### Userscript Menu Options
 
@@ -144,6 +154,26 @@ Domain patterns support:
 - Exact matches: `example.com`
 - Wildcards: `*.example.com`
 - Regex: `/pattern/`
+
+### Edit Selectors
+
+Configure which parts of a page get summarized using global and per-domain CSS selectors. Access via the badge settings menu.
+
+![Edit Selectors dialog](screenshots/edit-selectors.jpg)
+
+### Show Included Elements
+
+Visualize exactly which text blocks will be included (green) or excluded (red) from a summary.
+
+![Show Included Elements highlighting text blocks](screenshots/show-included-elements.jpg)
+
+### Element Inspection
+
+Diagnostic tool for troubleshooting selector matching. Enter Inspection Mode from the badge settings, then click any element to see its details, matched containers, and quickly add it to inclusions or exclusions.
+
+![Inspection Mode active on page](screenshots/inspection-mode.jpg)
+
+![Element Inspection dialog](screenshots/element-inspection-dialog.jpg)
 
 ### Custom Prompts
 
