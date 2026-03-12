@@ -90,32 +90,21 @@ describe('Overlay Module', () => {
       };
 
       vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
+      const { ensureCSS, getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
       ensureCSS();
+      const badgeCSS = getBadgeShadowCSS();
 
-      expect(createdElement.textContent).toContain('.summarizer-overlay');
-      expect(createdElement.textContent).toContain('position: fixed');
+      // Badge CSS is now in shadow DOM, summary overlay CSS stays in ensureCSS
+      expect(badgeCSS).toContain('position: fixed');
+      expect(createdElement.textContent).toContain('.summarizer-summary-overlay');
     });
 
-    it('includes collapsed state styles', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
-
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
+    it('includes collapsed state styles in badge shadow CSS', async () => {
       vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getBadgeShadowCSS();
 
-      expect(createdElement.textContent).toContain('.summarizer-overlay.collapsed');
+      expect(css).toContain(':host(.collapsed)');
     });
 
     it('includes summary overlay styles', async () => {
@@ -150,212 +139,160 @@ describe('Overlay Module', () => {
   });
 
   describe('Display settings CSS', () => {
-    let createdElement;
+    let ensureCSSText;
+    let badgeShadowCSS;
 
     beforeEach(async () => {
-      createdElement = { id: '', textContent: '' };
+      const createdElement = { id: '', textContent: '' };
       global.document = {
         getElementById: vi.fn().mockReturnValue(null),
         createElement: vi.fn().mockReturnValue(createdElement),
         head: { appendChild: vi.fn() }
       };
       vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
+      const mod = await import('../../src/modules/overlay.js');
+      mod.ensureCSS();
+      ensureCSSText = createdElement.textContent;
+      badgeShadowCSS = mod.getBadgeShadowCSS();
     });
 
     it('includes CSS custom property for font size', () => {
-      expect(createdElement.textContent).toContain('--summarizer-font-size');
+      expect(ensureCSSText).toContain('--summarizer-font-size');
     });
 
     it('includes CSS custom property for line height', () => {
-      expect(createdElement.textContent).toContain('--summarizer-line-height');
+      expect(ensureCSSText).toContain('--summarizer-line-height');
     });
 
     it('includes settings button styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-settings-btn');
+      expect(badgeShadowCSS).toContain('.summarizer-settings-btn');
     });
 
     it('includes badge settings container styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-badge-settings');
+      expect(badgeShadowCSS).toContain('.summarizer-badge-settings');
     });
 
     it('includes digest footer layout styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-footer');
+      expect(badgeShadowCSS).toContain('.summarizer-footer');
     });
 
     it('includes settings popover styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-settings-popover');
+      expect(badgeShadowCSS).toContain('.summarizer-settings-popover');
     });
 
     it('includes settings option styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-settings-option');
+      expect(badgeShadowCSS).toContain('.summarizer-settings-option');
     });
 
     it('includes active state for settings options', () => {
-      expect(createdElement.textContent).toContain('.summarizer-settings-option.active');
+      expect(badgeShadowCSS).toContain('.summarizer-settings-option.active');
     });
 
     it('popover is hidden by default', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-settings-popover\s*\{[^}]*display:\s*none/);
+      expect(badgeShadowCSS).toMatch(/\.summarizer-settings-popover\s*\{[^}]*display:\s*none/);
     });
 
     it('popover shows when open class applied', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-settings-popover\.open\s*\{[^}]*display:\s*block/);
+      expect(badgeShadowCSS).toMatch(/\.summarizer-settings-popover\.open\s*\{[^}]*display:\s*block/);
     });
 
     it('includes dark mode class for overlay', () => {
-      expect(createdElement.textContent).toContain('.summarizer-overlay.summarizer-dark');
+      expect(badgeShadowCSS).toContain(':host(.summarizer-dark)');
     });
 
     it('includes dark mode class for summary overlay', () => {
-      expect(createdElement.textContent).toContain('.summarizer-summary-overlay.summarizer-dark');
+      expect(ensureCSSText).toContain('.summarizer-summary-overlay.summarizer-dark');
     });
 
     it('includes dark mode styles for settings popover', () => {
-      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-settings-popover');
+      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-settings-popover');
     });
 
     it('includes dark mode styles for buttons', () => {
-      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-btn');
+      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-btn');
     });
 
     it('includes shortcut input styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-shortcut-input');
+      expect(badgeShadowCSS).toContain('.summarizer-shortcut-input');
     });
 
     it('includes shortcut row styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-shortcut-row');
+      expect(badgeShadowCSS).toContain('.summarizer-shortcut-row');
     });
 
     it('includes shortcut recording state', () => {
-      expect(createdElement.textContent).toContain('.summarizer-shortcut-input.recording');
+      expect(badgeShadowCSS).toContain('.summarizer-shortcut-input.recording');
     });
 
     it('includes dark mode styles for shortcuts', () => {
-      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-shortcut-input');
+      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-shortcut-input');
     });
 
     it('includes summary header controls styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-summary-header-controls');
+      expect(ensureCSSText).toContain('.summarizer-summary-header-controls');
     });
 
     it('includes summary settings button styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-summary-settings-btn');
+      expect(ensureCSSText).toContain('.summarizer-summary-settings-btn');
     });
 
     it('includes summary settings container styles', () => {
-      expect(createdElement.textContent).toContain('.summarizer-summary-settings');
+      expect(ensureCSSText).toContain('.summarizer-summary-settings');
     });
 
     it('includes selectors-btn styles', () => {
-      expect(createdElement.textContent).toContain('.selectors-btn');
+      expect(badgeShadowCSS).toContain('.selectors-btn');
     });
 
     it('includes selectors-btn in shared action button rules', () => {
-      // selectors-btn should be included alongside inspect-btn and highlight-btn
-      expect(createdElement.textContent).toContain('.selectors-btn,');
+      expect(badgeShadowCSS).toContain('.selectors-btn,');
     });
 
     it('includes dark mode styles for selectors-btn', () => {
-      expect(createdElement.textContent).toContain('.summarizer-dark .summarizer-badge-settings .selectors-btn');
+      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-badge-settings .selectors-btn');
     });
 
     it('includes explicit hover color for action buttons in light mode', () => {
-      // Hover should have explicit color to prevent purple-on-purple
-      expect(createdElement.textContent).toMatch(/\.selectors-btn:hover[^}]*color:\s*#4338ca/);
+      expect(badgeShadowCSS).toMatch(/\.selectors-btn:hover[^}]*color:\s*#4338ca/);
     });
 
     it('includes explicit hover color for action buttons in dark mode', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-dark[^}]*\.selectors-btn:hover[^}]*color:\s*#a5b4fc/);
+      expect(badgeShadowCSS).toMatch(/:host\(\.summarizer-dark\)[^}]*\.selectors-btn:hover[^}]*color:\s*#a5b4fc/);
     });
   });
 
   describe('CSS specifications', () => {
-    it('CSS includes high z-index for overlay', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
-
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
+    it('badge shadow CSS includes high z-index for overlay', async () => {
       vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getBadgeShadowCSS();
 
-      // Verify z-index is very high to stay on top
-      expect(createdElement.textContent).toContain('z-index: 2147483646');
+      expect(css).toContain('z-index: 2147483646');
     });
 
-    it('CSS includes width matching BADGE_WIDTH', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
-
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
+    it('badge shadow CSS includes width matching BADGE_WIDTH', async () => {
       vi.resetModules();
-      const { ensureCSS, BADGE_WIDTH } = await import('../../src/modules/overlay.js');
-      ensureCSS();
+      const { getBadgeShadowCSS, BADGE_WIDTH } = await import('../../src/modules/overlay.js');
+      const css = getBadgeShadowCSS();
 
-      expect(createdElement.textContent).toContain(`width: ${BADGE_WIDTH}px`);
+      expect(css).toContain(`width: ${BADGE_WIDTH}px`);
     });
 
-    it('CSS includes transition for smooth animations', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
-
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
+    it('badge shadow CSS includes transition for smooth animations', async () => {
       vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getBadgeShadowCSS();
 
-      expect(createdElement.textContent).toContain('transition');
+      expect(css).toContain('transition');
     });
 
-    it('CSS includes dragging state without transition', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
-
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
+    it('badge shadow CSS includes dragging state without transition', async () => {
       vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getBadgeShadowCSS();
 
-      expect(createdElement.textContent).toContain('.summarizer-overlay.dragging');
-      expect(createdElement.textContent).toContain('transition: none');
+      expect(css).toContain(':host(.dragging)');
+      expect(css).toContain('transition: none');
     });
   });
 

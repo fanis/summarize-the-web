@@ -45,3 +45,23 @@ export function normalizeSpace(s) {
 export function textTrim(el) {
     return normalizeSpace(el.textContent || '');
 }
+
+/**
+ * Set innerHTML safely, working around Trusted Types CSP on sites like Gmail.
+ * Creates a Trusted Types policy if the browser enforces it, otherwise falls back to plain innerHTML.
+ */
+let trustedPolicy = null;
+export function setHTML(el, html) {
+    try {
+        el.innerHTML = html;
+    } catch {
+        if (!trustedPolicy && typeof window.trustedTypes !== 'undefined') {
+            trustedPolicy = window.trustedTypes.createPolicy('summarize-the-web', {
+                createHTML: (s) => s
+            });
+        }
+        if (trustedPolicy) {
+            el.innerHTML = trustedPolicy.createHTML(html);
+        }
+    }
+}

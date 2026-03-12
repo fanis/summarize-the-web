@@ -3,7 +3,7 @@
  */
 
 import { UI_ATTR, STORAGE_KEYS, DEFAULT_EXCLUDES } from './config.js';
-import { escapeHtml, textTrim } from './utils.js';
+import { escapeHtml, textTrim, setHTML } from './utils.js';
 import { generateCSSSelector, findMatchingSelectors, findMatchingExclusions, compiledSelectors } from './selectors.js';
 
 let inspectionOverlay = null;
@@ -360,7 +360,7 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
         </ul>` :
         '<p class="info-row no-match">No domain exclusions configured or affect this element.</p>';
 
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Element Inspection">
             <div class="header">
                 <div class="header-title">Element Inspection</div>
@@ -414,7 +414,7 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
                 </div>
             </div>
         </div>
-    `;
+    `);
 
     shadow.append(style, wrap);
     document.body.appendChild(host);

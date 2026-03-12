@@ -1,5 +1,5 @@
 import { CFG, STORAGE_KEYS, MODEL_OPTIONS, DEFAULT_SELECTORS, DEFAULT_EXCLUDES, DEFAULT_PROMPTS, SIMPLIFICATION_LEVELS, DEFAULT_MIN_TEXT_LENGTH } from './modules/config.js';
-import { log } from './modules/utils.js';
+import { log, setHTML } from './modules/utils.js';
 import { Storage } from './modules/storage.js';
 import { domainPatternToRegex, listMatchesHost } from './modules/selectors.js';
 import { initApiTracking, digestText, friendlyApiError, resetApiTokens, PRICING } from './modules/api.js';
@@ -232,7 +232,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     // Restore original article content
     function restoreOriginal() {
         if (originalContent && lastSummarizedContainer) {
-            lastSummarizedContainer.innerHTML = originalContent;
+            setHTML(lastSummarizedContainer, originalContent);
             originalContent = null;
             lastSummarizedContainer = null;
         }

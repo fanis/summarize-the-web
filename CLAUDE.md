@@ -62,9 +62,9 @@ Core modules in `src/modules/`:
 
 ### UI Patterns
 
-- **Shadow DOM for injected UI**: Summary overlay and Edit Selectors dialog use Shadow DOM for complete CSS isolation from host pages. Use this pattern for any UI that must render consistently across all sites.
-- **stopPropagation on handlers**: Add `e.stopPropagation()` to click handlers in injected UI to prevent site scripts from interfering.
-- **Dual CSS in overlay.js**: Badge CSS lives in `ensureCSS()` (with `!important`), shadow DOM CSS in `getSummaryOverlayShadowCSS()`. Shared styles (popover, settings options, dark mode) must be updated in both places.
+- **Shadow DOM for all injected UI**: Badge, summary overlay, and Edit Selectors dialog all use Shadow DOM for complete CSS isolation from host pages. Badge CSS lives in `getBadgeShadowCSS()`, summary overlay CSS in `getSummaryOverlayShadowCSS()`. Shared styles (popover, settings options, dark mode) must be updated in both. `ensureCSS()` only contains summary overlay `!important` fallback styles.
+- **Trusted Types support**: All `innerHTML` assignments use the `setHTML()` helper (in `utils.js`) which creates a Trusted Types policy when required by CSP (e.g. Gmail).
+- **stopPropagation on handlers**: Add `e.stopPropagation()` to click handlers in injected UI to prevent site scripts from interfering. For document-level listeners that need to see inside shadow DOM, use `e.composedPath()`.
 - **Viewport-aware positioning**: Badge is draggable, so popovers/menus must check available space and flip direction (see `popover-below` class).
 
 ### Data Flow

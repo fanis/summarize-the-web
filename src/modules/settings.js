@@ -3,7 +3,7 @@
  */
 
 import { UI_ATTR, STORAGE_KEYS, MODEL_OPTIONS, SIMPLIFICATION_LEVELS, DEFAULT_PROMPTS } from './config.js';
-import { parseLines, escapeHtml } from './utils.js';
+import { parseLines, escapeHtml, setHTML } from './utils.js';
 import { xhrGet, API_TOKENS, PRICING, calculateApiCost } from './api.js';
 
 /**
@@ -69,7 +69,7 @@ export function openEditor({ title, hint = 'One item per line', mode = 'list', i
         actionsContent = '<button class="save">Save</button><button class="cancel">Cancel</button>';
     }
 
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal" role="dialog" aria-modal="true" aria-label="${title}">
             <h3>${title}</h3>
             ${bodyContent}
@@ -77,7 +77,7 @@ export function openEditor({ title, hint = 'One item per line', mode = 'list', i
                 ${actionsContent}
             </div>
             <p class="hint">${hint}</p>
-        </div>`;
+        </div>`);
     shadow.append(style, wrap);
     document.body.appendChild(host);
     const close = () => host.remove();
@@ -206,7 +206,7 @@ export function openWelcomeDialog(storage) {
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
 
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Welcome">
             <h2>Welcome to Summarize The Web!</h2>
             <p>This userscript helps you summarize and simplify web articles using AI.</p>
@@ -225,7 +225,7 @@ export function openWelcomeDialog(storage) {
                 <button class="btn secondary cancel">Maybe Later</button>
                 <button class="btn primary continue">Set Up API Key</button>
             </div>
-        </div>`;
+        </div>`);
 
     shadow.append(style, wrap);
     document.body.appendChild(host);
@@ -317,7 +317,7 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
         </div>
     `).join('');
 
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal">
             <h3>Simplification Style</h3>
             <p class="subtitle">Controls how the AI simplifies language. Large/Small buttons control the target length.</p>
@@ -327,7 +327,7 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
                 <button class="btn btn-save">Save & Clear Cache</button>
             </div>
         </div>
-    `;
+    `);
     shadow.append(style, wrap);
     document.body.appendChild(host);
 
@@ -417,7 +417,7 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
         `;
     }).join('');
 
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal">
             <h3>AI Model Selection</h3>
             <p class="subtitle">Choose the OpenAI model for summarization. Higher-tier models provide better quality but cost more.</p>
@@ -427,7 +427,7 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
                 <button class="btn btn-save">Save & Reload</button>
             </div>
         </div>
-    `;
+    `);
     shadow.append(style, wrap);
     document.body.appendChild(host);
 
@@ -500,7 +500,7 @@ export function openCustomPromptDialog(storage, currentPrompts, onSave) {
 
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal">
             <h3>Custom Summary Prompts</h3>
             <div class="section">
@@ -519,7 +519,7 @@ export function openCustomPromptDialog(storage, currentPrompts, onSave) {
                 <button class="btn btn-save">Save & Clear Cache</button>
             </div>
         </div>
-    `;
+    `);
     shadow.append(style, wrap);
     document.body.appendChild(host);
 
@@ -599,7 +599,7 @@ export function showStats(cacheSize) {
 
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal">
             <h3>Usage Statistics</h3>
 
@@ -660,7 +660,7 @@ export function showStats(cacheSize) {
                 <button class="btn btn-close">Close</button>
             </div>
         </div>
-    `;
+    `);
     shadow.append(style, wrap);
     document.body.appendChild(host);
 
@@ -710,7 +710,7 @@ export function openDomainEditor(storage, mode, DOMAIN_ALLOW, DOMAIN_DENY) {
 
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal">
             <h3>${title}</h3>
             <textarea>${list.join('\n')}</textarea>
@@ -720,7 +720,7 @@ export function openDomainEditor(storage, mode, DOMAIN_ALLOW, DOMAIN_DENY) {
                 <button class="btn btn-save">Save & Reload</button>
             </div>
         </div>
-    `;
+    `);
     shadow.append(style, wrap);
     document.body.appendChild(host);
 
@@ -816,7 +816,7 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
 
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
-    wrap.innerHTML = `
+    setHTML(wrap, `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Edit Selectors">
             <div class="header">
                 <span class="header-title">Edit Selectors</span>
@@ -876,7 +876,7 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
                 <button class="btn btn-save">Save &amp; Reload</button>
             </div>
         </div>
-    `;
+    `);
     shadow.append(style, wrap);
     document.body.appendChild(hostEl);
 

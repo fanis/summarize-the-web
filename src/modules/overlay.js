@@ -3,9 +3,10 @@
  */
 
 import { UI_ATTR, STORAGE_KEYS, SUMMARY_FONT_SIZES, SUMMARY_LINE_HEIGHTS, THEME_OPTIONS, DEFAULT_SHORTCUTS } from './config.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, setHTML } from './utils.js';
 
 let overlay = null;
+let overlayShadow = null;
 let summaryOverlay = null;
 let summaryOverlayShadow = null;
 let isDragging = false;
@@ -94,6 +95,417 @@ function updateAllThemes(theme) {
         const innerOverlay = summaryOverlayShadow.querySelector('.summarizer-summary-overlay');
         applyTheme(innerOverlay, theme);
     }
+}
+
+/**
+ * Generate CSS for badge shadow DOM
+ */
+export function getBadgeShadowCSS() {
+    return `
+        :host {
+            all: initial;
+            display: block;
+        }
+
+        :host {
+            position: fixed;
+            z-index: 2147483646;
+            font: 13px/1.4 system-ui, sans-serif;
+            color: #1a1a1a;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: 1px solid #5568d3;
+            border-radius: 10px;
+            box-shadow: 0 6px 22px rgba(0,0,0,.18);
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            width: 150px;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, border-radius 0.3s ease;
+            user-select: none;
+            right: 0;
+            transform: translateX(0);
+        }
+        :host(.collapsed) {
+            transform: translateX(100%);
+            border-right: none;
+            border-radius: 10px 0 0 10px;
+            box-shadow: -4px 0 22px rgba(0,0,0,.18);
+        }
+        :host(.dragging) {
+            transition: none;
+            cursor: grabbing;
+        }
+        :host .summarizer-slide-handle {
+            position: absolute;
+            left: -28px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 56px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: 1px solid #5568d3;
+            border-right: none;
+            border-radius: 8px 0 0 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #fff;
+            box-shadow: -3px 0 12px rgba(0,0,0,.12);
+            transition: width 0.2s ease, left 0.2s ease, box-shadow 0.2s ease;
+        }
+        :host .summarizer-slide-handle:hover {
+            width: 30px;
+            left: -30px;
+            box-shadow: -4px 0 16px rgba(0,0,0,.18);
+        }
+        :host .summarizer-handle {
+            background: rgba(255,255,255,0.2);
+            padding: 10px 12px;
+            cursor: grab;
+            border-radius: 9px 9px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+        }
+        :host(.collapsed) .summarizer-handle {
+            border-radius: 9px 0 0 0;
+        }
+        :host .summarizer-handle:active {
+            cursor: grabbing;
+        }
+        :host .summarizer-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #fff;
+            margin: 0;
+            text-align: center;
+        }
+        :host .summarizer-content {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: rgba(255,255,255,0.95);
+            border-radius: 0 0 9px 9px;
+        }
+        :host(.collapsed) .summarizer-content {
+            border-radius: 0 0 0 9px;
+        }
+        :host .summarizer-section {
+            margin: 0;
+            padding: 0;
+        }
+        :host .summarizer-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #667eea;
+            margin: 0 0 6px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        :host .summarizer-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        :host .summarizer-btn {
+            flex: 1;
+            min-width: 0;
+            padding: 8px 4px;
+            border: 1px solid #667eea;
+            background: #fff;
+            color: #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+            text-align: center;
+        }
+        :host .summarizer-btn:hover {
+            background: #667eea;
+            color: #fff;
+        }
+        :host .summarizer-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        :host .summarizer-btn.active {
+            background: #667eea;
+            color: #fff;
+            font-weight: 600;
+        }
+        :host .summarizer-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        :host .summarizer-status {
+            font-size: 10px;
+            color: #666;
+            margin: 0;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        :host .summarizer-badge-settings {
+            position: relative;
+        }
+        :host .summarizer-badge-settings .summarizer-settings-btn {
+            min-width: 24px;
+            width: 24px;
+            height: 24px;
+            flex: none;
+            padding: 4px;
+            font-size: 12px;
+        }
+        :host .summarizer-badge-settings .summarizer-settings-popover {
+            right: 0;
+            bottom: 28px;
+            top: auto;
+            min-width: 160px;
+        }
+        :host .summarizer-badge-settings .summarizer-settings-popover.popover-below {
+            bottom: auto;
+            top: 28px;
+        }
+        :host .summarizer-badge-settings .selectors-btn,
+        :host .summarizer-badge-settings .inspect-btn,
+        :host .summarizer-badge-settings .highlight-btn {
+            width: 100%;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #e5e7eb;
+            border-radius: 0;
+            border-left: none;
+            border-right: none;
+            border-bottom: none;
+            background: transparent;
+        }
+        :host .summarizer-badge-settings .inspect-btn,
+        :host .summarizer-badge-settings .highlight-btn {
+            margin-top: 4px;
+            padding-top: 8px;
+            border-top: none;
+        }
+        :host .summarizer-badge-settings .selectors-btn:hover,
+        :host .summarizer-badge-settings .inspect-btn:hover,
+        :host .summarizer-badge-settings .highlight-btn:hover {
+            background: #f3f4f6;
+            color: #4338ca;
+        }
+        :host .summarizer-branding {
+            font-size: 8px;
+            color: rgba(255,255,255,0.6);
+            text-align: center;
+            padding: 2px 0 0 0;
+            margin: 0;
+            letter-spacing: 0.3px;
+        }
+
+        
+
+        :host .summarizer-settings-popover {
+            position: absolute;
+            top: 40px;
+            right: 0;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 16px;
+            min-width: 200px;
+            z-index: 10;
+            display: none;
+        }
+
+        :host .summarizer-settings-popover.open {
+            display: block;
+        }
+
+        :host .summarizer-settings-group {
+            margin-bottom: 14px;
+        }
+
+        :host .summarizer-settings-group:last-child {
+            margin-bottom: 0;
+        }
+
+        :host .summarizer-settings-label {
+            font: 600 11px/1.2 system-ui, sans-serif;
+            color: #667eea;
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        :host .summarizer-settings-options {
+            display: flex;
+            gap: 4px;
+        }
+
+        :host .summarizer-settings-option {
+            flex: 1;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            background: #fff;
+            color: #666;
+            border-radius: 6px;
+            cursor: pointer;
+            font: 500 12px/1.2 system-ui, sans-serif;
+            text-align: center;
+            transition: all 0.15s;
+        }
+
+        :host .summarizer-settings-option:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        :host .summarizer-settings-option.active {
+            background: #667eea;
+            border-color: #667eea;
+            color: #fff;
+        }
+
+        :host .summarizer-shortcut-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        :host .summarizer-shortcut-row:last-child {
+            margin-bottom: 0;
+        }
+
+        :host .summarizer-shortcut-label {
+            font: 500 11px/1.2 system-ui, sans-serif;
+            color: #666;
+            min-width: 40px;
+        }
+
+        :host .summarizer-shortcut-input {
+            flex: 1;
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font: 500 11px/1.2 system-ui, sans-serif;
+            text-align: center;
+            cursor: pointer;
+            background: #fff;
+            color: #333;
+        }
+
+        :host .summarizer-shortcut-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        :host .summarizer-shortcut-input.recording {
+            border-color: #f59e0b;
+            background: #fffbeb;
+            animation: summarizer-pulse 1s infinite;
+        }
+
+        :host(.summarizer-dark) .summarizer-shortcut-label {
+            color: #9ca3af;
+        }
+
+        :host(.summarizer-dark) .summarizer-shortcut-input {
+            background: #374151;
+            border-color: #4b5563;
+            color: #e5e7eb;
+        }
+
+        :host(.summarizer-dark) .summarizer-shortcut-input:focus {
+            border-color: #6366f1;
+            background: #1e1b4b;
+        }
+
+        :host(.summarizer-dark) {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+            border-color: #4338ca;
+        }
+
+        :host(.summarizer-dark) .summarizer-slide-handle {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+            border-color: #4338ca;
+        }
+
+        :host(.summarizer-dark) .summarizer-content {
+            background: rgba(30, 27, 75, 0.95);
+        }
+
+        :host(.summarizer-dark) .summarizer-btn {
+            background: #1e1b4b;
+            border-color: #6366f1;
+            color: #a5b4fc;
+        }
+
+        :host(.summarizer-dark) .summarizer-btn:hover {
+            background: #6366f1;
+            color: #fff;
+        }
+
+        :host(.summarizer-dark) .summarizer-btn.active {
+            background: #6366f1;
+            color: #fff;
+        }
+
+        :host(.summarizer-dark) .summarizer-status {
+            color: #9ca3af;
+        }
+
+        :host(.summarizer-dark) .summarizer-badge-settings .selectors-btn,
+        :host(.summarizer-dark) .summarizer-badge-settings .inspect-btn,
+
+        :host(.summarizer-dark) .summarizer-badge-settings .highlight-btn {
+            border-top-color: #374151;
+            color: #d1d5db;
+        }
+
+        :host(.summarizer-dark) .summarizer-badge-settings .selectors-btn:hover,
+        :host(.summarizer-dark) .summarizer-badge-settings .inspect-btn:hover,
+
+        :host(.summarizer-dark) .summarizer-badge-settings .highlight-btn:hover {
+            background: #374151;
+            color: #a5b4fc;
+        }
+
+        :host(.summarizer-dark) .summarizer-settings-popover {
+            background: #1f2937;
+            border-color: #374151;
+        }
+
+        :host(.summarizer-dark) .summarizer-settings-label {
+            color: #a5b4fc;
+        }
+
+        :host(.summarizer-dark) .summarizer-settings-option {
+            background: #374151;
+            border-color: #4b5563;
+            color: #d1d5db;
+        }
+
+        :host(.summarizer-dark) .summarizer-settings-option:hover {
+            border-color: #6366f1;
+            color: #a5b4fc;
+        }
+
+        :host(.summarizer-dark) .summarizer-settings-option.active {
+            background: #6366f1;
+            border-color: #6366f1;
+            color: #fff;
+        }
+    `;
 }
 
 /**
@@ -391,7 +803,7 @@ function getSummaryOverlayShadowCSS() {
  */
 function syncBadgeSetting(setting, value) {
     if (!overlay) return;
-    const options = overlay.querySelectorAll(`[data-setting="${setting}"] .summarizer-settings-option`);
+    const options = overlayShadow.querySelectorAll(`[data-setting="${setting}"] .summarizer-settings-option`);
     options.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.value === value);
     });
@@ -410,209 +822,6 @@ export function ensureCSS() {
     const style = document.createElement('style');
     style.id = 'summarizer-style';
     style.textContent = `
-        #summarizer-overlay-singleton.summarizer-overlay {
-            position: fixed !important;
-            z-index: 2147483646 !important;
-            font: 13px/1.4 system-ui, sans-serif !important;
-            color: #1a1a1a !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            border: 1px solid #5568d3 !important;
-            border-radius: 10px !important;
-            box-shadow: 0 6px 22px rgba(0,0,0,.18) !important;
-            display: flex !important;
-            flex-direction: column !important;
-            box-sizing: border-box !important;
-            width: 150px !important;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, border-radius 0.3s ease !important;
-            user-select: none !important;
-            right: 0 !important;
-            transform: translateX(0) !important;
-        }
-        #summarizer-overlay-singleton.summarizer-overlay.collapsed {
-            transform: translateX(100%) !important;
-            border-right: none !important;
-            border-radius: 10px 0 0 10px !important;
-            box-shadow: -4px 0 22px rgba(0,0,0,.18) !important;
-        }
-        #summarizer-overlay-singleton.summarizer-overlay.dragging {
-            transition: none !important;
-            cursor: grabbing !important;
-        }
-        #summarizer-overlay-singleton .summarizer-slide-handle {
-            position: absolute !important;
-            left: -28px !important;
-            top: 50% !important;
-            transform: translateY(-50%) !important;
-            width: 28px !important;
-            height: 56px !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            border: 1px solid #5568d3 !important;
-            border-right: none !important;
-            border-radius: 8px 0 0 8px !important;
-            cursor: pointer !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            font-size: 14px !important;
-            color: #fff !important;
-            box-shadow: -3px 0 12px rgba(0,0,0,.12) !important;
-            transition: width 0.2s ease, left 0.2s ease, box-shadow 0.2s ease !important;
-        }
-        #summarizer-overlay-singleton .summarizer-slide-handle:hover {
-            width: 30px !important;
-            left: -30px !important;
-            box-shadow: -4px 0 16px rgba(0,0,0,.18) !important;
-        }
-        #summarizer-overlay-singleton .summarizer-handle {
-            background: rgba(255,255,255,0.2) !important;
-            padding: 10px 12px !important;
-            cursor: grab !important;
-            border-radius: 9px 9px 0 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            border-bottom: 1px solid rgba(255,255,255,0.3) !important;
-        }
-        #summarizer-overlay-singleton.collapsed .summarizer-handle {
-            border-radius: 9px 0 0 0 !important;
-        }
-        #summarizer-overlay-singleton .summarizer-handle:active {
-            cursor: grabbing !important;
-        }
-        #summarizer-overlay-singleton .summarizer-title {
-            font-weight: 600 !important;
-            font-size: 14px !important;
-            color: #fff !important;
-            margin: 0 !important;
-            text-align: center !important;
-        }
-        #summarizer-overlay-singleton .summarizer-content {
-            padding: 12px !important;
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 8px !important;
-            background: rgba(255,255,255,0.95) !important;
-            border-radius: 0 0 9px 9px !important;
-        }
-        #summarizer-overlay-singleton.collapsed .summarizer-content {
-            border-radius: 0 0 0 9px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-section {
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        #summarizer-overlay-singleton .summarizer-section-title {
-            font-size: 11px !important;
-            font-weight: 600 !important;
-            color: #667eea !important;
-            margin: 0 0 6px 0 !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.5px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-buttons {
-            display: flex !important;
-            gap: 6px !important;
-            flex-wrap: wrap !important;
-        }
-        #summarizer-overlay-singleton .summarizer-btn {
-            flex: 1 !important;
-            min-width: 0 !important;
-            padding: 8px 4px !important;
-            border: 1px solid #667eea !important;
-            background: #fff !important;
-            color: #667eea !important;
-            border-radius: 6px !important;
-            cursor: pointer !important;
-            font-size: 12px !important;
-            font-weight: 500 !important;
-            transition: all 0.2s !important;
-            white-space: nowrap !important;
-            text-align: center !important;
-        }
-        #summarizer-overlay-singleton .summarizer-btn:hover {
-            background: #667eea !important;
-            color: #fff !important;
-        }
-        #summarizer-overlay-singleton .summarizer-btn:disabled {
-            opacity: 0.5 !important;
-            cursor: not-allowed !important;
-        }
-        #summarizer-overlay-singleton .summarizer-btn.active {
-            background: #667eea !important;
-            color: #fff !important;
-            font-weight: 600 !important;
-        }
-        #summarizer-overlay-singleton .summarizer-footer {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            gap: 8px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-status {
-            font-size: 10px !important;
-            color: #666 !important;
-            margin: 0 !important;
-            flex: 1 !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            white-space: nowrap !important;
-        }
-        #summarizer-overlay-singleton .summarizer-badge-settings {
-            position: relative !important;
-        }
-        #summarizer-overlay-singleton .summarizer-badge-settings .summarizer-settings-btn {
-            min-width: 24px !important;
-            width: 24px !important;
-            height: 24px !important;
-            flex: none !important;
-            padding: 4px !important;
-            font-size: 12px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-badge-settings .summarizer-settings-popover {
-            right: 0 !important;
-            bottom: 28px !important;
-            top: auto !important;
-            min-width: 160px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-badge-settings .summarizer-settings-popover.popover-below {
-            bottom: auto !important;
-            top: 28px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-badge-settings .selectors-btn,
-        #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
-        #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
-            width: 100% !important;
-            margin-top: 8px !important;
-            padding-top: 8px !important;
-            border-top: 1px solid #e5e7eb !important;
-            border-radius: 0 !important;
-            border-left: none !important;
-            border-right: none !important;
-            border-bottom: none !important;
-            background: transparent !important;
-        }
-        #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn,
-        #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn {
-            margin-top: 4px !important;
-            padding-top: 8px !important;
-            border-top: none !important;
-        }
-        #summarizer-overlay-singleton .summarizer-badge-settings .selectors-btn:hover,
-        #summarizer-overlay-singleton .summarizer-badge-settings .inspect-btn:hover,
-        #summarizer-overlay-singleton .summarizer-badge-settings .highlight-btn:hover {
-            background: #f3f4f6 !important;
-            color: #4338ca !important;
-        }
-        #summarizer-overlay-singleton .summarizer-branding {
-            font-size: 8px !important;
-            color: rgba(255,255,255,0.6) !important;
-            text-align: center !important;
-            padding: 2px 0 0 0 !important;
-            margin: 0 !important;
-            letter-spacing: 0.3px !important;
-        }
-
-        /* Summary Overlay Styles */
         .summarizer-summary-overlay {
             position: fixed !important;
             top: 12px !important;
@@ -848,222 +1057,57 @@ export function ensureCSS() {
             color: #fff !important;
         }
 
-        #summarizer-overlay-singleton .summarizer-settings-popover {
-            position: absolute !important;
-            top: 40px !important;
-            right: 0 !important;
-            background: #fff !important;
-            border: 1px solid #e0e0e0 !important;
-            border-radius: 10px !important;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
-            padding: 16px !important;
-            min-width: 200px !important;
-            z-index: 10 !important;
-            display: none !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-popover.open {
-            display: block !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-group {
-            margin-bottom: 14px !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-group:last-child {
-            margin-bottom: 0 !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-label {
-            font: 600 11px/1.2 system-ui, sans-serif !important;
-            color: #667eea !important;
-            margin: 0 0 8px 0 !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.5px !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-options {
-            display: flex !important;
-            gap: 4px !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-option {
-            flex: 1 !important;
-            padding: 6px 8px !important;
-            border: 1px solid #ddd !important;
-            background: #fff !important;
-            color: #666 !important;
-            border-radius: 6px !important;
-            cursor: pointer !important;
-            font: 500 12px/1.2 system-ui, sans-serif !important;
-            text-align: center !important;
-            transition: all 0.15s !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-option:hover {
-            border-color: #667eea !important;
-            color: #667eea !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-settings-option.active {
-            background: #667eea !important;
-            border-color: #667eea !important;
-            color: #fff !important;
-        }
-
-        #summarizer-overlay-singleton .summarizer-shortcut-row {
-            display: flex !important;
-            align-items: center !important;
-            gap: 8px !important;
-            margin-bottom: 6px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-shortcut-row:last-child {
-            margin-bottom: 0 !important;
-        }
-        #summarizer-overlay-singleton .summarizer-shortcut-label {
-            font: 500 11px/1.2 system-ui, sans-serif !important;
-            color: #666 !important;
-            min-width: 40px !important;
-        }
-        #summarizer-overlay-singleton .summarizer-shortcut-input {
-            flex: 1 !important;
-            padding: 4px 8px !important;
-            border: 1px solid #ddd !important;
-            border-radius: 4px !important;
-            font: 500 11px/1.2 system-ui, sans-serif !important;
-            text-align: center !important;
-            cursor: pointer !important;
-            background: #fff !important;
-            color: #333 !important;
-        }
-        #summarizer-overlay-singleton .summarizer-shortcut-input:focus {
-            outline: none !important;
-            border-color: #667eea !important;
-            background: #f0f4ff !important;
-        }
-        #summarizer-overlay-singleton .summarizer-shortcut-input.recording {
-            border-color: #f59e0b !important;
-            background: #fffbeb !important;
-            animation: summarizer-pulse 1s infinite !important;
-        }
         @keyframes summarizer-pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
         }
 
-        /* Dark mode for shortcuts */
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-shortcut-label {
-            color: #9ca3af !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-shortcut-input {
-            background: #374151 !important;
-            border-color: #4b5563 !important;
-            color: #e5e7eb !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-shortcut-input:focus {
-            border-color: #6366f1 !important;
-            background: #1e1b4b !important;
-        }
-
-        /* Dark mode styles */
-        #summarizer-overlay-singleton.summarizer-overlay.summarizer-dark {
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
-            border-color: #4338ca !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-slide-handle {
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
-            border-color: #4338ca !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-content {
-            background: rgba(30, 27, 75, 0.95) !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-btn {
-            background: #1e1b4b !important;
-            border-color: #6366f1 !important;
-            color: #a5b4fc !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-btn:hover {
-            background: #6366f1 !important;
-            color: #fff !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-btn.active {
-            background: #6366f1 !important;
-            color: #fff !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-status {
-            color: #9ca3af !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .selectors-btn,
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn,
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn {
-            border-top-color: #374151 !important;
-            color: #d1d5db !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .selectors-btn:hover,
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .inspect-btn:hover,
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-badge-settings .highlight-btn:hover {
-            background: #374151 !important;
-            color: #a5b4fc !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-popover {
-            background: #1f2937 !important;
-            border-color: #374151 !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-label {
-            color: #a5b4fc !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-option {
-            background: #374151 !important;
-            border-color: #4b5563 !important;
-            color: #d1d5db !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-option:hover {
-            border-color: #6366f1 !important;
-            color: #a5b4fc !important;
-        }
-        #summarizer-overlay-singleton.summarizer-dark .summarizer-settings-option.active {
-            background: #6366f1 !important;
-            border-color: #6366f1 !important;
-            color: #fff !important;
-        }
-
-        /* Dark mode for summary overlay */
         .summarizer-summary-overlay.summarizer-dark {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
             border-color: #4338ca !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-summary-header {
             background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-summary-content {
             color: #e5e7eb !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer {
             background: rgba(30, 27, 75, 0.3) !important;
             border-top-color: rgba(99, 102, 241, 0.3) !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer-text {
             color: #6b7280 !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-summary-close-btn {
             background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%) !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-summary-popover {
             background: #1f2937 !important;
             border-color: #374151 !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-settings-label {
             color: #a5b4fc !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option {
             background: #374151 !important;
             border-color: #4b5563 !important;
             color: #d1d5db !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option:hover {
             border-color: #6366f1 !important;
             color: #a5b4fc !important;
         }
+
         .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option.active {
             background: #6366f1 !important;
             border-color: #6366f1 !important;
@@ -1091,6 +1135,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     } else if (existingOverlays.length === 1) {
         // Single overlay exists - reuse it
         overlay = existingOverlays[0];
+        overlayShadow = overlay.shadowRoot;
         return overlay;
     }
 
@@ -1129,7 +1174,11 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     overlay.style.top = `${OVERLAY_POS.y}px`;
     overlay.style.right = '0px';
 
-    overlay.innerHTML = `
+    // Attach shadow DOM for CSS isolation
+    overlayShadow = overlay.attachShadow({ mode: 'open' });
+
+    setHTML(overlayShadow, `
+        <style>${getBadgeShadowCSS()}</style>
         <div class="summarizer-slide-handle" title="${OVERLAY_COLLAPSED.value ? 'Open' : 'Close'}">
             ${OVERLAY_COLLAPSED.value ? '◀' : '▶'}
         </div>
@@ -1189,17 +1238,17 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
                 </div>
             </div>
         </div>
-    `;
+    `);
 
     document.body.appendChild(overlay);
 
     // Attach event listeners
-    const slideHandle = overlay.querySelector('.summarizer-slide-handle');
-    const dragHandle = overlay.querySelector('.summarizer-handle');
-    const digestBtns = overlay.querySelectorAll('.summarizer-btn[data-size]');
-    const inspectBtn = overlay.querySelector('.inspect-btn');
-    const settingsPopover = overlay.querySelector('.summarizer-settings-popover');
-    const settingsBtn = overlay.querySelector('.summarizer-settings-btn');
+    const slideHandle = overlayShadow.querySelector('.summarizer-slide-handle');
+    const dragHandle = overlayShadow.querySelector('.summarizer-handle');
+    const digestBtns = overlayShadow.querySelectorAll('.summarizer-btn[data-size]');
+    const inspectBtn = overlayShadow.querySelector('.inspect-btn');
+    const settingsPopover = overlayShadow.querySelector('.summarizer-settings-popover');
+    const settingsBtn = overlayShadow.querySelector('.summarizer-settings-btn');
 
     slideHandle.addEventListener('click', (e) => {
         // Close settings popover when collapsing badge
@@ -1216,7 +1265,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
         });
     });
 
-    const selectorsBtn = overlay.querySelector('.selectors-btn');
+    const selectorsBtn = overlayShadow.querySelector('.selectors-btn');
     selectorsBtn.addEventListener('click', () => {
         settingsPopover?.classList.remove('open');
         onEditSelectors?.();
@@ -1227,7 +1276,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
         onInspect();
     });
 
-    const highlightBtn = overlay.querySelector('.highlight-btn');
+    const highlightBtn = overlayShadow.querySelector('.highlight-btn');
     highlightBtn.addEventListener('click', () => {
         settingsPopover?.classList.remove('open');
         onSummaryHighlight?.();
@@ -1257,15 +1306,16 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
         settingsPopover.classList.toggle('open');
     });
 
-    // Close popover when clicking outside
+    // Close popover when clicking outside (use composedPath to see through shadow DOM)
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.summarizer-badge-settings')) {
+        const path = e.composedPath();
+        if (!path.some(el => el.classList && el.classList.contains('summarizer-badge-settings'))) {
             settingsPopover.classList.remove('open');
         }
     });
 
     // Handle font size changes
-    const fontSizeOptions = overlay.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
+    const fontSizeOptions = overlayShadow.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
     fontSizeOptions.forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1283,7 +1333,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     });
 
     // Handle line height changes
-    const lineHeightOptions = overlay.querySelectorAll('[data-setting="lineHeight"] .summarizer-settings-option');
+    const lineHeightOptions = overlayShadow.querySelectorAll('[data-setting="lineHeight"] .summarizer-settings-option');
     lineHeightOptions.forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1301,7 +1351,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     });
 
     // Handle theme changes
-    const themeOptions = overlay.querySelectorAll('[data-setting="theme"] .summarizer-settings-option');
+    const themeOptions = overlayShadow.querySelectorAll('[data-setting="theme"] .summarizer-settings-option');
     themeOptions.forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1329,7 +1379,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     }
 
     // Handle shortcut recording
-    const shortcutInputs = overlay.querySelectorAll('.summarizer-shortcut-input');
+    const shortcutInputs = overlayShadow.querySelectorAll('.summarizer-shortcut-input');
     shortcutInputs.forEach(input => {
         input.addEventListener('click', () => {
             input.classList.add('recording');
@@ -1361,7 +1411,7 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
                 storage.set(storageKey, shortcutStr);
 
                 // Update button title
-                const btn = overlay.querySelector(`[data-size="${shortcutType}"]`);
+                const btn = overlayShadow.querySelector(`[data-size="${shortcutType}"]`);
                 if (btn) btn.title = shortcutStr;
 
                 document.removeEventListener('keydown', recordHandler, true);
@@ -1432,7 +1482,7 @@ async function toggleSlide(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage) {
     OVERLAY_POS.y = currentY;
     storage.set(STORAGE_KEYS.OVERLAY_POS, JSON.stringify(OVERLAY_POS));
 
-    const handle = overlay.querySelector('.summarizer-slide-handle');
+    const handle = overlayShadow.querySelector('.summarizer-slide-handle');
     if (handle) {
         handle.textContent = OVERLAY_COLLAPSED.value ? '◀' : '▶';
         handle.title = OVERLAY_COLLAPSED.value ? 'Open' : 'Close';
@@ -1499,8 +1549,8 @@ function startDrag(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage) {
 export function updateOverlayStatus(status, mode = null, fromCache = false) {
     if (!overlay) return;
 
-    const statusEl = overlay.querySelector('.summarizer-status');
-    const digestBtns = overlay.querySelectorAll('.summarizer-btn[data-size]');
+    const statusEl = overlayShadow.querySelector('.summarizer-status');
+    const digestBtns = overlayShadow.querySelectorAll('.summarizer-btn[data-size]');
 
     digestBtns.forEach(btn => btn.classList.remove('active'));
 
@@ -1518,7 +1568,7 @@ export function updateOverlayStatus(status, mode = null, fromCache = false) {
         statusEl.textContent = `${sizeLabel} summary applied`;
         digestBtns.forEach(btn => btn.disabled = false);
 
-        const activeBtn = overlay.querySelector(`[data-size="${size}"]`);
+        const activeBtn = overlayShadow.querySelector(`[data-size="${size}"]`);
         if (activeBtn) activeBtn.classList.add('active');
     }
 }
@@ -1575,7 +1625,7 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     summaryOverlayShadow = summaryOverlay.attachShadow({ mode: 'open' });
 
     // Build shadow DOM content
-    summaryOverlayShadow.innerHTML = `
+    setHTML(summaryOverlayShadow, `
         <style>${getSummaryOverlayShadowCSS()}</style>
         <div class="summarizer-summary-overlay">
             <div class="summarizer-summary-container">
@@ -1625,7 +1675,7 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
                 </div>
             </div>
         </div>
-    `;
+    `);
 
     document.body.appendChild(summaryOverlay);
     lockBodyScroll();
@@ -1773,7 +1823,7 @@ function collapseOverlay(OVERLAY_COLLAPSED) {
     overlay.classList.add('collapsed');
     overlay.style.left = '';
     overlay.style.right = '0px';
-    const handle = overlay.querySelector('.summarizer-slide-handle');
+    const handle = overlayShadow.querySelector('.summarizer-slide-handle');
     if (handle) {
         handle.textContent = '◀';
         handle.title = 'Open';
@@ -1792,7 +1842,7 @@ function expandOverlay() {
     overlay.classList.remove('collapsed');
     overlay.style.right = '0px';
     overlay.style.left = '';
-    const handle = overlay.querySelector('.summarizer-slide-handle');
+    const handle = overlayShadow.querySelector('.summarizer-slide-handle');
     if (handle) {
         handle.textContent = '▶';
         handle.title = 'Close';
