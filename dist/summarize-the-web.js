@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.4.0
+// @version      2.4.1
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -3040,29 +3040,31 @@
         return `
         :host {
             all: initial;
-            display: block;
-        }
-
-        :host {
             position: fixed;
             z-index: 2147483646;
             font: 13px/1.4 system-ui, sans-serif;
             color: #1a1a1a;
+            box-sizing: border-box;
+            width: 150px;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+            right: 0;
+            transform: translateX(0);
+            display: block;
+        }
+        :host .summarizer-wrapper {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: 1px solid #5568d3;
             border-radius: 10px;
             box-shadow: 0 6px 22px rgba(0,0,0,.18);
             display: flex;
             flex-direction: column;
-            box-sizing: border-box;
-            width: 150px;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, border-radius 0.3s ease;
-            user-select: none;
-            right: 0;
-            transform: translateX(0);
+            transition: box-shadow 0.3s ease, border-radius 0.3s ease;
         }
         :host(.collapsed) {
             transform: translateX(100%);
+        }
+        :host(.collapsed) .summarizer-wrapper {
             border-right: none;
             border-radius: 10px 0 0 10px;
             box-shadow: -4px 0 22px rgba(0,0,0,.18);
@@ -3366,7 +3368,7 @@
             background: #1e1b4b;
         }
 
-        :host(.summarizer-dark) {
+        :host(.summarizer-dark) .summarizer-wrapper {
             background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
             border-color: #4338ca;
         }
@@ -4113,6 +4115,7 @@
         <div class="summarizer-slide-handle" title="${OVERLAY_COLLAPSED.value ? 'Open' : 'Close'}">
             ${OVERLAY_COLLAPSED.value ? '◀' : '▶'}
         </div>
+        <div class="summarizer-wrapper">
         <div class="summarizer-handle">
             <div class="summarizer-title">Summarize</div>
             <div class="summarizer-branding">The Web</div>
@@ -4168,6 +4171,7 @@
                     </div>
                 </div>
             </div>
+        </div>
         </div>
     `);
 
