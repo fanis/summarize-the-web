@@ -132,6 +132,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     GM_registerMenuCommand?.(
         computeDomainDisabled(HOST) ? `Current page: DISABLED (click to enable)` : `Current page: ENABLED (click to disable)`,
         async () => {
+            const wasDisabled = computeDomainDisabled(HOST);
             if (DOMAINS_MODE === 'allow') {
                 if (listMatchesHost(DOMAIN_ALLOW, HOST)) {
                     DOMAIN_ALLOW = DOMAIN_ALLOW.filter(p => !domainPatternToRegex(p)?.test(HOST));
@@ -146,6 +147,10 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
                     if (!DOMAIN_DENY.includes(HOST)) DOMAIN_DENY.push(HOST);
                 }
                 await storage.set(STORAGE_KEYS.DOMAINS_DENY, JSON.stringify(DOMAIN_DENY));
+            }
+            // If we just enabled this domain, flag it so overlay opens expanded after reload
+            if (wasDisabled && !computeDomainDisabled(HOST)) {
+                await storage.set(STORAGE_KEYS.JUST_ENABLED, 'true');
             }
             location.reload();
         }
@@ -427,6 +432,14 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     if (DOMAIN_DISABLED) {
         log('Domain disabled, skipping overlay:', HOST);
         return;
+    }
+
+    // If domain was just enabled, force overlay open and clear the flag
+    const justEnabled = await storage.get(STORAGE_KEYS.JUST_ENABLED, '');
+    if (justEnabled === 'true') {
+        OVERLAY_COLLAPSED.value = false;
+        await storage.set(STORAGE_KEYS.OVERLAY_COLLAPSED, 'false');
+        await storage.set(STORAGE_KEYS.JUST_ENABLED, '');
     }
 
     // Create overlay

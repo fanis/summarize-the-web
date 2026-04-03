@@ -83,6 +83,7 @@ export const STORAGE_KEYS = {
     DOMAIN_SELECTORS: 'digest_domain_selectors_v1',
     DOMAIN_EXCLUDES: 'digest_domain_excludes_v1',
     MIN_TEXT_LENGTH: 'digest_min_text_length_v1',
+    JUST_ENABLED: 'digest_just_enabled_v1',
     // Display settings
     SUMMARY_FONT_SIZE: 'digest_summary_font_size_v1',
     SUMMARY_LINE_HEIGHT: 'digest_summary_line_height_v1',

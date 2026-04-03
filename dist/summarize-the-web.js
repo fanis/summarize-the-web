@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.4.1
+// @version      2.4.2
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -118,6 +118,7 @@
         DOMAIN_SELECTORS: 'digest_domain_selectors_v1',
         DOMAIN_EXCLUDES: 'digest_domain_excludes_v1',
         MIN_TEXT_LENGTH: 'digest_min_text_length_v1',
+        JUST_ENABLED: 'digest_just_enabled_v1',
         // Display settings
         SUMMARY_FONT_SIZE: 'digest_summary_font_size_v1',
         SUMMARY_LINE_HEIGHT: 'digest_summary_line_height_v1',
@@ -4911,6 +4912,7 @@
         GM_registerMenuCommand?.(
             computeDomainDisabled(HOST) ? `Current page: DISABLED (click to enable)` : `Current page: ENABLED (click to disable)`,
             async () => {
+                const wasDisabled = computeDomainDisabled(HOST);
                 if (DOMAINS_MODE === 'allow') {
                     if (listMatchesHost(DOMAIN_ALLOW, HOST)) {
                         DOMAIN_ALLOW = DOMAIN_ALLOW.filter(p => !domainPatternToRegex(p)?.test(HOST));
@@ -4925,6 +4927,10 @@
                         if (!DOMAIN_DENY.includes(HOST)) DOMAIN_DENY.push(HOST);
                     }
                     await storage.set(STORAGE_KEYS.DOMAINS_DENY, JSON.stringify(DOMAIN_DENY));
+                }
+                // If we just enabled this domain, flag it so overlay opens expanded after reload
+                if (wasDisabled && !computeDomainDisabled(HOST)) {
+                    await storage.set(STORAGE_KEYS.JUST_ENABLED, 'true');
                 }
                 location.reload();
             }
@@ -5206,6 +5212,14 @@
         if (DOMAIN_DISABLED) {
             log('Domain disabled, skipping overlay:', HOST);
             return;
+        }
+
+        // If domain was just enabled, force overlay open and clear the flag
+        const justEnabled = await storage.get(STORAGE_KEYS.JUST_ENABLED, '');
+        if (justEnabled === 'true') {
+            OVERLAY_COLLAPSED.value = false;
+            await storage.set(STORAGE_KEYS.OVERLAY_COLLAPSED, 'false');
+            await storage.set(STORAGE_KEYS.JUST_ENABLED, '');
         }
 
         // Create overlay

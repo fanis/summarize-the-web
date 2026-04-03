@@ -71,18 +71,14 @@ If build fails, STOP and report errors. Do not proceed.
 git tag X.Y.Z
 ```
 
-### 9. Push Reminder
+### 9. Push
 
-Tell the user to manually run:
 ```bash
 git push
 git push origin X.Y.Z
 ```
 
-(Manual push required for authentication)
-
 ## Notes
 
 - Stop immediately on any test or build failure
 - Always wait for user approval before committing
-- The user must push manually due to authentication requirements
