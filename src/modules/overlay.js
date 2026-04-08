@@ -20,6 +20,7 @@ let keyboardHandler = null;
 let savedBodyOverflow = null;
 let savedHtmlOverflow = null;
 let scrollLocked = false;
+let storedOnDigest = null;
 
 export const BADGE_WIDTH = 150;
 
@@ -644,6 +645,27 @@ function getSummaryOverlayShadowCSS() {
             letter-spacing: 0.3px;
         }
 
+        .summarizer-resummarize-btn {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: rgba(255, 255, 255, 0.9);
+            font: 400 12px/1.2 system-ui, sans-serif;
+            cursor: pointer;
+            height: 32px;
+            padding: 0 10px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            margin-left: auto;
+            margin-right: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .summarizer-resummarize-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+
         .summarizer-summary-close-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: #fff;
@@ -946,6 +968,27 @@ export function ensureCSS() {
             letter-spacing: 0.3px !important;
         }
 
+        .summarizer-resummarize-btn {
+            background: rgba(255, 255, 255, 0.15) !important;
+            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+            color: rgba(255, 255, 255, 0.9) !important;
+            font: 400 12px/1.2 system-ui, sans-serif !important;
+            cursor: pointer !important;
+            height: 32px !important;
+            padding: 0 10px !important;
+            border-radius: 6px !important;
+            transition: all 0.2s !important;
+            margin-left: auto !important;
+            margin-right: 8px !important;
+            display: flex !important;
+            align-items: center !important;
+        }
+
+        .summarizer-resummarize-btn:hover {
+            background: rgba(255, 255, 255, 0.25) !important;
+            color: #fff !important;
+        }
+
         .summarizer-summary-restore,
         .summarizer-summary-close-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
@@ -1127,6 +1170,9 @@ const CREATION_LOCK_ATTR = 'data-summarizer-creating';
  * Create the main overlay
  */
 export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors) {
+    // Store digest callback for re-summarize from summary overlay
+    storedOnDigest = onDigest;
+
     // Check for existing overlays (can be duplicates if script runs multiple times)
     const existingOverlays = document.querySelectorAll(`#${OVERLAY_ID}`);
 
@@ -1635,6 +1681,7 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
             <div class="summarizer-summary-container">
                 <div class="summarizer-summary-header">
                     <div class="summarizer-summary-badge">${escapeHtml(sizeLabel)} Summary${isSelectedText ? ' (Selected Text)' : ''}</div>
+                    <button class="summarizer-resummarize-btn" data-size="${mode.includes('large') ? 'small' : 'large'}">Re-summarize as ${mode.includes('large') ? 'Small' : 'Large'}</button>
                     <div class="summarizer-summary-header-controls">
                         <div class="summarizer-summary-settings">
                             <button class="summarizer-summary-settings-btn" title="Display settings">&#9881;</button>
@@ -1709,6 +1756,17 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     } else {
         closeBtn.addEventListener('click', closeHandler);
         closeBtnFooter.addEventListener('click', closeHandler);
+    }
+
+    // Re-summarize button
+    const resummarizeBtn = summaryOverlayShadow.querySelector('.summarizer-resummarize-btn');
+    if (resummarizeBtn && storedOnDigest) {
+        resummarizeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const size = resummarizeBtn.dataset.size;
+            removeSummaryOverlay();
+            storedOnDigest(size);
+        });
     }
 
     // Summary settings popover
