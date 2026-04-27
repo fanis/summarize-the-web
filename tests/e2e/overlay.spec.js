@@ -527,7 +527,7 @@ test.describe('Overlay Dragging (Real Code)', () => {
     // Get initial position and handle location
     const initialData = await page.evaluate(() => {
       const overlay = document.querySelector('.summarizer-overlay');
-      const handle = overlay.querySelector('.summarizer-handle');
+      const handle = overlay.shadowRoot.querySelector('.summarizer-handle');
       const overlayRect = overlay.getBoundingClientRect();
       const handleRect = handle.getBoundingClientRect();
       return {
@@ -561,7 +561,8 @@ test.describe('Overlay Dragging (Real Code)', () => {
 
     // Get handle location
     const handlePos = await page.evaluate(() => {
-      const handle = document.querySelector('.summarizer-handle');
+      const overlay = document.querySelector('.summarizer-overlay');
+      const handle = overlay.shadowRoot.querySelector('.summarizer-handle');
       const rect = handle.getBoundingClientRect();
       return {
         x: rect.left + rect.width / 2,

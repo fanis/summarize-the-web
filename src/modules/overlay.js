@@ -508,6 +508,9 @@ export function getBadgeShadowCSS() {
             border-color: #6366f1;
             color: #fff;
         }
+        @media print {
+            :host { display: none !important; }
+        }
     `;
 }
 
@@ -818,6 +821,32 @@ function getSummaryOverlayShadowCSS() {
             background: #6366f1;
             border-color: #6366f1;
             color: #fff;
+        }
+        @media print {
+            .summarizer-summary-overlay {
+                position: static;
+                transform: none;
+                width: 100%;
+                max-width: 100%;
+                max-height: none;
+                margin: 0 0 1em 0;
+                border: 1px solid #999;
+                border-radius: 0;
+                box-shadow: none;
+                animation: none;
+                background: #fff;
+                color: #000;
+            }
+            .summarizer-summary-content {
+                max-height: none;
+                overflow: visible;
+            }
+            .summarizer-resummarize-btn,
+            .summarizer-summary-close,
+            .summarizer-summary-close-btn,
+            .summarizer-summary-header-controls {
+                display: none !important;
+            }
         }
     `;
 }

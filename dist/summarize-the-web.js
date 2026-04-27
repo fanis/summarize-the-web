@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.5.0
+// @version      2.6.0
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -3445,6 +3445,9 @@
             border-color: #6366f1;
             color: #fff;
         }
+        @media print {
+            :host { display: none !important; }
+        }
     `;
     }
 
@@ -3755,6 +3758,32 @@
             background: #6366f1;
             border-color: #6366f1;
             color: #fff;
+        }
+        @media print {
+            .summarizer-summary-overlay {
+                position: static;
+                transform: none;
+                width: 100%;
+                max-width: 100%;
+                max-height: none;
+                margin: 0 0 1em 0;
+                border: 1px solid #999;
+                border-radius: 0;
+                box-shadow: none;
+                animation: none;
+                background: #fff;
+                color: #000;
+            }
+            .summarizer-summary-content {
+                max-height: none;
+                overflow: visible;
+            }
+            .summarizer-resummarize-btn,
+            .summarizer-summary-close,
+            .summarizer-summary-close-btn,
+            .summarizer-summary-header-controls {
+                display: none !important;
+            }
         }
     `;
     }
