@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.6.1] - 2026-06-28
 
 ### Fixed
 - Badge vertical position no longer occasionally resets to the very top. The position is now clamped non-destructively against a reliable viewport height (measured after the badge is in the DOM), and re-clamped on resize/orientation change so the badge stays on-screen and returns to its saved spot when space comes back.
