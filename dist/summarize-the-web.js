@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.6.0
+// @version      2.6.1
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -2958,6 +2958,8 @@
     let savedHtmlOverflow = null;
     let scrollLocked = false;
     let storedOnDigest = null;
+    let currentOverlayPos = null;
+    let resizeHandlerRegistered = false;
 
     const BADGE_WIDTH = 150;
 
@@ -4176,10 +4178,11 @@
         // Apply theme
         applyTheme(overlay, savedTheme);
 
-        // Set initial position - always anchored to right edge
-        const maxY = window.innerHeight - 200;
-        OVERLAY_POS.y = Math.max(0, Math.min(OVERLAY_POS.y, maxY));
-
+        // Set initial position - always anchored to right edge.
+        // Render at the saved Y for now; the real clamp happens in
+        // repositionBadge() after the badge is in the DOM (so we can measure its
+        // height and read a reliable viewport size). Clamping here against a
+        // not-yet-ready viewport is what previously snapped the badge to the top.
         overlay.style.top = `${OVERLAY_POS.y}px`;
         overlay.style.right = '0px';
 
@@ -4252,6 +4255,20 @@
     `);
 
         document.body.appendChild(overlay);
+
+        // Now that the badge is in the DOM we can measure it and clamp into a
+        // reliable viewport. Keep OVERLAY_POS as the user's desired position.
+        currentOverlayPos = OVERLAY_POS;
+        repositionBadge();
+
+        // Re-clamp when the viewport changes (rotation, mobile chrome, resize) so
+        // the badge stays on-screen and returns to its desired spot when space
+        // comes back. Registered once for the lifetime of the page.
+        if (!resizeHandlerRegistered) {
+            window.addEventListener('resize', repositionBadge);
+            window.addEventListener('orientationchange', repositionBadge);
+            resizeHandlerRegistered = true;
+        }
 
         // Attach event listeners
         const slideHandle = overlayShadow.querySelector('.summarizer-slide-handle');
@@ -4463,6 +4480,31 @@
 
         document.body.removeAttribute(CREATION_LOCK_ATTR);
         return overlay;
+    }
+
+    /**
+     * Clamp the badge vertically into the current viewport.
+     *
+     * Only adjusts the rendered `top`; OVERLAY_POS keeps the user's desired
+     * position so the badge can return to it when the viewport grows back. Skips
+     * clamping entirely when the viewport height isn't reliable yet (<= 0), which
+     * is what previously caused the badge to snap to the top during early load or
+     * mobile chrome transitions.
+     */
+    function repositionBadge() {
+        if (!overlay || !overlay.isConnected || !currentOverlayPos) return;
+
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (vh <= 0) return;
+
+        const badgeHeight = overlay.offsetHeight || 200;
+        const maxY = Math.max(0, vh - badgeHeight);
+
+        let desiredY = currentOverlayPos.y;
+        if (typeof desiredY !== 'number' || Number.isNaN(desiredY)) desiredY = vh * 0.7;
+
+        const clampedY = Math.max(0, Math.min(desiredY, maxY));
+        overlay.style.top = `${clampedY}px`;
     }
 
     /**
