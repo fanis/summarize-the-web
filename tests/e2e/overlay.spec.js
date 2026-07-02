@@ -603,16 +603,24 @@ test.describe('Overlay CSS (Real Code)', () => {
     await page.evaluate(gmMocks);
   });
 
-  test('injects style element with correct id', async ({ page }) => {
+  test('badge styles live inside the shadow root, not the page', async ({ page }) => {
     await injectUserscript(page);
 
     await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
 
-    const styleExists = await page.evaluate(() => {
-      return !!document.getElementById('summarizer-style');
+    const result = await page.evaluate(() => {
+      const overlay = document.querySelector('.summarizer-overlay');
+      const shadowStyle = overlay?.shadowRoot?.querySelector('style');
+      return {
+        hasShadowStyle: !!shadowStyle && shadowStyle.textContent.includes(':host'),
+        hasPageStyle: !!document.getElementById('summarizer-style')
+      };
     });
 
-    expect(styleExists).toBe(true);
+    expect(result.hasShadowStyle).toBe(true);
+    // The old page-level fallback stylesheet was dead code (shadow DOM is
+    // unreachable from document-level CSS) and must not come back.
+    expect(result.hasPageStyle).toBe(false);
   });
 
   test('overlay has fixed positioning', async ({ page }) => {

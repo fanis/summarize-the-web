@@ -2,19 +2,35 @@
  * Settings dialogs and management for Summarize The Web
  */
 
-import { UI_ATTR, STORAGE_KEYS, MODEL_OPTIONS, SIMPLIFICATION_LEVELS, DEFAULT_PROMPTS } from './config.js';
-import { parseLines, escapeHtml, setHTML } from './utils.js';
+import { STORAGE_KEYS, MODEL_OPTIONS, SIMPLIFICATION_LEVELS, DEFAULT_PROMPTS } from './config.js';
+import { parseLines, escapeHtml } from './utils.js';
+import { createDialog } from './dialog.js';
 import { xhrGet, API_TOKENS, PRICING, calculateApiCost } from './api.js';
+
+/**
+ * Build a validator callback that tests an OpenAI key via GET /v1/models.
+ * Shared by the key editor, the missing-key dialog and the welcome flow.
+ */
+function makeKeyValidator(storage, { success = 'Validation OK (HTTP 200)', empty = 'No key to test' } = {}) {
+    return async (val) => {
+        const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
+        if (!key) { openInfo(empty); return; }
+        try {
+            await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` });
+            openInfo(success);
+        } catch (e) {
+            openInfo(`Validation failed: ${e.message || e}`);
+        }
+    };
+}
+
+const KEY_HINT = 'Stored locally (GM → localStorage → memory). Validate sends GET /v1/models.';
 
 /**
  * Polymorphic editor for lists, secrets, domains, and info display
  */
-export function openEditor({ title, hint = 'One item per line', mode = 'list', initial = [], globalItems = [], onSave, onValidate }) {
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+export function openEditor({ title, hint = 'One item per line', mode = 'list', initial = [], globalItems = [], onSave, onValidate, onClose }) {
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:680px;width:92%;border-radius:10px;
@@ -34,25 +50,22 @@ export function openEditor({ title, hint = 'One item per line', mode = 'list', i
         .actions .test{background:#34a853;color:#fff;border-color:#34a853}
         .hint{margin:8px 0 0;color:#666;font:12px/1.2 system-ui,sans-serif}
     `;
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-    const bodyList = `<textarea spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${
-        Array.isArray(initial) ? initial.join('\n') : ''
-    }</textarea>`;
+
+    const listText = (items) => escapeHtml(Array.isArray(items) ? items.join('\n') : String(items));
+
+    const bodyList = `<textarea spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${listText(initial)}</textarea>`;
     const bodyDomain = `
         <div class="section-label">Global settings (read-only):</div>
-        <textarea class="readonly" readonly spellcheck="false">${Array.isArray(globalItems) ? globalItems.join('\n') : ''}</textarea>
+        <textarea class="readonly" readonly spellcheck="false">${listText(globalItems)}</textarea>
         <div class="section-label">Domain-specific additions (editable):</div>
-        <textarea class="editable" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${Array.isArray(initial) ? initial.join('\n') : ''}</textarea>
+        <textarea class="editable" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${listText(initial)}</textarea>
     `;
     const bodySecret = `
         <div class="row">
             <input id="sec" type="password" placeholder="sk-..." autocomplete="off" />
             <button id="toggle" title="Show/Hide">👁</button>
         </div>`;
-    const bodyInfo = `<textarea class="readonly" readonly spellcheck="false" style="height:auto;min-height:60px;max-height:300px;">${
-        Array.isArray(initial) ? initial.join('\n') : String(initial)
-    }</textarea>`;
+    const bodyInfo = `<textarea class="readonly" readonly spellcheck="false" style="height:auto;min-height:60px;max-height:300px;">${listText(initial)}</textarea>`;
 
     let bodyContent, actionsContent;
     if (mode === 'info') {
@@ -69,34 +82,29 @@ export function openEditor({ title, hint = 'One item per line', mode = 'list', i
         actionsContent = '<button class="save">Save</button><button class="cancel">Cancel</button>';
     }
 
-    setHTML(wrap, `
-        <div class="modal" role="dialog" aria-modal="true" aria-label="${title}">
-            <h3>${title}</h3>
+    const { shadow, close } = createDialog({
+        css,
+        onClose,
+        bodyHTML: `
+        <div class="modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+            <h3>${escapeHtml(title)}</h3>
             ${bodyContent}
             <div class="actions">
                 ${actionsContent}
             </div>
-            <p class="hint">${hint}</p>
-        </div>`);
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
-    const close = () => host.remove();
+            <p class="hint">${escapeHtml(hint)}</p>
+        </div>`
+    });
 
     if (mode === 'info') {
-        const btnClose = shadow.querySelector('.cancel');
-        btnClose.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+        shadow.querySelector('.cancel').addEventListener('click', close);
         shadow.addEventListener('keydown', e => {
-            if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); close(); }
+            if (e.key === 'Enter') { e.preventDefault(); close(); }
         });
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
     } else if (mode === 'secret') {
         const inp = shadow.querySelector('#sec');
         const btnSave = shadow.querySelector('.save');
-        const btnCancel = shadow.querySelector('.cancel');
         const btnToggle = shadow.querySelector('#toggle');
-        const btnTest = shadow.querySelector('.test');
         if (typeof initial === 'string' && initial) inp.value = initial;
         btnToggle.addEventListener('click', () => { inp.type = (inp.type === 'password') ? 'text' : 'password'; inp.focus(); });
         btnSave.addEventListener('click', async () => {
@@ -108,29 +116,20 @@ export function openEditor({ title, hint = 'One item per line', mode = 'list', i
             btnSave.style.borderColor = '#34a853';
             setTimeout(close, 1000);
         });
-        btnCancel.addEventListener('click', close);
-        btnTest?.addEventListener('click', async () => { await onValidate?.(inp.value.trim()); });
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); } });
+        shadow.querySelector('.cancel').addEventListener('click', close);
+        shadow.querySelector('.test')?.addEventListener('click', async () => { await onValidate?.(inp.value.trim()); });
+        shadow.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); }
+        });
         inp.focus();
-    } else if (mode === 'domain') {
-        const ta = shadow.querySelector('textarea.editable');
-        const btnSave = shadow.querySelector('.save');
-        const btnCancel = shadow.querySelector('.cancel');
-        btnSave.addEventListener('click', async () => { const lines = parseLines(ta.value); await onSave?.(lines); close(); });
-        btnCancel.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); } });
-        ta.focus();
-        ta.selectionStart = ta.selectionEnd = ta.value.length;
     } else {
-        const ta = shadow.querySelector('textarea');
+        const ta = shadow.querySelector(mode === 'domain' ? 'textarea.editable' : 'textarea');
         const btnSave = shadow.querySelector('.save');
-        const btnCancel = shadow.querySelector('.cancel');
         btnSave.addEventListener('click', async () => { const lines = parseLines(ta.value); await onSave?.(lines); close(); });
-        btnCancel.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); } });
+        shadow.querySelector('.cancel').addEventListener('click', close);
+        shadow.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); }
+        });
         ta.focus();
         ta.selectionStart = ta.selectionEnd = ta.value.length;
     }
@@ -144,7 +143,22 @@ export function openInfo(message) {
 }
 
 /**
- * Show API key dialog
+ * Open the API key editor with the currently stored key (menu entry point)
+ */
+export async function openApiKeyEditor(storage) {
+    const current = await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
+    openEditor({
+        title: 'OpenAI API key',
+        mode: 'secret',
+        initial: current,
+        hint: KEY_HINT,
+        onSave: async (val) => { await storage.set(STORAGE_KEYS.OPENAI_KEY, val); },
+        onValidate: makeKeyValidator(storage)
+    });
+}
+
+/**
+ * Show API key dialog (missing/invalid key flow; deduplicated per page)
  */
 export function openKeyDialog(storage, extra, apiKeyDialogShown) {
     if (apiKeyDialogShown.value) {
@@ -156,21 +170,12 @@ export function openKeyDialog(storage, extra, apiKeyDialogShown) {
         title: extra || 'OpenAI API key',
         mode: 'secret',
         initial: '',
-        hint: 'Stored locally (GM → localStorage → memory). Validate sends GET /v1/models.',
-        onSave: async (val) => {
-            const ok = await storage.set(STORAGE_KEYS.OPENAI_KEY, val);
-            apiKeyDialogShown.value = false;
-        },
-        onValidate: async (val) => {
-            const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-            if (!key) { openInfo('No key to test'); return; }
-            try {
-                await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` });
-                openInfo('Validation OK (HTTP 200)');
-            } catch (e) {
-                openInfo(`Validation failed: ${e.message || e}`);
-            }
-        }
+        hint: KEY_HINT,
+        // Reset on every close path (save, cancel, Escape, backdrop) so the
+        // dialog can reappear if the key is still missing later.
+        onClose: () => { apiKeyDialogShown.value = false; },
+        onSave: async (val) => { await storage.set(STORAGE_KEYS.OPENAI_KEY, val); },
+        onValidate: makeKeyValidator(storage)
     });
 }
 
@@ -178,11 +183,7 @@ export function openKeyDialog(storage, extra, apiKeyDialogShown) {
  * Show welcome dialog (first install)
  */
 export function openWelcomeDialog(storage) {
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.55);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:580px;width:94%;border-radius:12px;
@@ -203,10 +204,19 @@ export function openWelcomeDialog(storage) {
         .btn.secondary{background:#e8eaed;color:#1a1a1a}
         .btn.secondary:hover{background:#dadce0}
     `;
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
 
-    setHTML(wrap, `
+    let continued = false;
+
+    const { shadow, close } = createDialog({
+        css,
+        // Cancel semantics apply to every close path (button, Escape,
+        // backdrop) except the explicit "Set Up API Key" continuation.
+        onClose: async () => {
+            if (continued) return;
+            await storage.set(STORAGE_KEYS.FIRST_INSTALL, 'true');
+            openInfo('You can set up your API key anytime via the userscript menu:\n"Set / Validate OpenAI API key"');
+        },
+        bodyHTML: `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Welcome">
             <h2>Welcome to Summarize The Web!</h2>
             <p>This userscript helps you summarize and simplify web articles using AI.</p>
@@ -225,16 +235,12 @@ export function openWelcomeDialog(storage) {
                 <button class="btn secondary cancel">Maybe Later</button>
                 <button class="btn primary continue">Set Up API Key</button>
             </div>
-        </div>`);
+        </div>`
+    });
 
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
-
-    const btnContinue = shadow.querySelector('.continue');
-    const btnCancel = shadow.querySelector('.cancel');
-
-    btnContinue.addEventListener('click', async () => {
-        host.remove();
+    shadow.querySelector('.continue').addEventListener('click', () => {
+        continued = true;
+        close();
         openEditor({
             title: 'OpenAI API key',
             mode: 'secret',
@@ -246,40 +252,21 @@ export function openWelcomeDialog(storage) {
                 await storage.set(STORAGE_KEYS.FIRST_INSTALL, 'true');
                 openInfo('API key saved! The script will now work on all websites. Reload any page to see it in action.');
             },
-            onValidate: async (val) => {
-                const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-                if (!key) { openInfo('Please enter your API key first'); return; }
-                try {
-                    await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` });
-                    openInfo('Validation OK! Click Save to continue.');
-                } catch (e) {
-                    openInfo(`Validation failed: ${e.message || e}`);
-                }
-            }
+            onValidate: makeKeyValidator(storage, {
+                success: 'Validation OK! Click Save to continue.',
+                empty: 'Please enter your API key first'
+            })
         });
     });
 
-    btnCancel.addEventListener('click', async () => {
-        host.remove();
-        await storage.set(STORAGE_KEYS.FIRST_INSTALL, 'true');
-        openInfo('You can set up your API key anytime via the userscript menu:\n"Set / Validate OpenAI API key"');
-    });
-
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) btnCancel.click(); });
-    shadow.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); btnCancel.click(); } });
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
+    shadow.querySelector('.cancel').addEventListener('click', close);
 }
 
 /**
  * Show simplification style dialog
  */
 export function openSimplificationStyleDialog(storage, currentLevel, setSimplification) {
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:520px;width:90%;border-radius:12px;
@@ -307,9 +294,6 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
         'Aggressive': 'Maximum simplification - more creative rephrasing for easier reading'
     };
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-
     const optionsHtml = SIMPLIFICATION_LEVELS.map(level => `
         <div class="option ${level === currentLevel ? 'selected' : ''}" data-level="${level}">
             <div class="option-title">${level}</div>
@@ -317,7 +301,9 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
         </div>
     `).join('');
 
-    setHTML(wrap, `
+    const { shadow, close } = createDialog({
+        css,
+        bodyHTML: `
         <div class="modal">
             <h3>Simplification Style</h3>
             <p class="subtitle">Controls how the AI simplifies language. Large/Small buttons control the target length.</p>
@@ -326,10 +312,8 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Clear Cache</button>
             </div>
-        </div>
-    `);
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
+        </div>`
+    });
 
     let selectedLevel = currentLevel;
 
@@ -343,10 +327,6 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
     });
 
     const btnSave = shadow.querySelector('.btn-save');
-    const btnCancel = shadow.querySelector('.btn-cancel');
-
-    const close = () => host.remove();
-
     btnSave.addEventListener('click', async () => {
         if (!SIMPLIFICATION_LEVELS.includes(selectedLevel)) return;
         await setSimplification(selectedLevel);
@@ -355,23 +335,14 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
         setTimeout(close, 800);
     });
 
-    btnCancel.addEventListener('click', close);
-    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-    shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
+    shadow.querySelector('.btn-cancel').addEventListener('click', close);
 }
 
 /**
  * Show model selection dialog
  */
 export function openModelSelectionDialog(storage, currentModel, onSelect) {
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:600px;width:90%;border-radius:12px;
@@ -398,9 +369,6 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
         .btn-cancel:hover{background:#d0d0d0}
     `;
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-
     const optionsHtml = Object.keys(MODEL_OPTIONS).map(modelId => {
         const model = MODEL_OPTIONS[modelId];
         const isSelected = modelId === currentModel;
@@ -417,7 +385,9 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
         `;
     }).join('');
 
-    setHTML(wrap, `
+    const { shadow, close } = createDialog({
+        css,
+        bodyHTML: `
         <div class="modal">
             <h3>AI Model Selection</h3>
             <p class="subtitle">Choose the OpenAI model for summarization. Higher-tier models provide better quality but cost more.</p>
@@ -426,10 +396,8 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Reload</button>
             </div>
-        </div>
-    `);
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
+        </div>`
+    });
 
     let selectedModel = currentModel;
 
@@ -443,10 +411,6 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
     });
 
     const btnSave = shadow.querySelector('.btn-save');
-    const btnCancel = shadow.querySelector('.btn-cancel');
-
-    const close = () => host.remove();
-
     btnSave.addEventListener('click', async () => {
         if (!MODEL_OPTIONS[selectedModel]) return;
         await onSelect(selectedModel);
@@ -455,23 +419,14 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
         setTimeout(() => location.reload(), 800);
     });
 
-    btnCancel.addEventListener('click', close);
-    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-    shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
+    shadow.querySelector('.btn-cancel').addEventListener('click', close);
 }
 
 /**
  * Show custom prompts dialog
  */
 export function openCustomPromptDialog(storage, currentPrompts, onSave) {
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center;overflow-y:auto}
         .modal{background:#fff;max-width:700px;width:94%;border-radius:12px;
@@ -498,19 +453,19 @@ export function openCustomPromptDialog(storage, currentPrompts, onSave) {
         .hint{margin:6px 0 0;color:#999;font:11px/1.3 system-ui,sans-serif}
     `;
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-    setHTML(wrap, `
+    const { shadow, close } = createDialog({
+        css,
+        bodyHTML: `
         <div class="modal">
             <h3>Custom Summary Prompts</h3>
             <div class="section">
                 <div class="section-label">Large Summary (50%)</div>
-                <textarea id="summary-large-prompt">${currentPrompts.summary_large || DEFAULT_PROMPTS.summary_large}</textarea>
+                <textarea id="summary-large-prompt">${escapeHtml(currentPrompts.summary_large || DEFAULT_PROMPTS.summary_large)}</textarea>
                 <p class="hint">Summarizes content to approximately 50% of original length</p>
             </div>
             <div class="section">
                 <div class="section-label">Small Summary (20%)</div>
-                <textarea id="summary-small-prompt">${currentPrompts.summary_small || DEFAULT_PROMPTS.summary_small}</textarea>
+                <textarea id="summary-small-prompt">${escapeHtml(currentPrompts.summary_small || DEFAULT_PROMPTS.summary_small)}</textarea>
                 <p class="hint">Creates a concise summary at approximately 20% of original length</p>
             </div>
             <div class="actions">
@@ -518,18 +473,13 @@ export function openCustomPromptDialog(storage, currentPrompts, onSave) {
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Clear Cache</button>
             </div>
-        </div>
-    `);
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
+        </div>`
+    });
 
     const summaryLarge = shadow.querySelector('#summary-large-prompt');
     const summarySmall = shadow.querySelector('#summary-small-prompt');
     const btnSave = shadow.querySelector('.btn-save');
     const btnReset = shadow.querySelector('.btn-reset');
-    const btnCancel = shadow.querySelector('.btn-cancel');
-
-    const close = () => host.remove();
 
     btnSave.addEventListener('click', async () => {
         const prompts = {
@@ -542,30 +492,21 @@ export function openCustomPromptDialog(storage, currentPrompts, onSave) {
         setTimeout(close, 1000);
     });
 
-    btnReset.addEventListener('click', async () => {
+    btnReset.addEventListener('click', () => {
         summaryLarge.value = DEFAULT_PROMPTS.summary_large;
         summarySmall.value = DEFAULT_PROMPTS.summary_small;
         btnReset.textContent = 'Reset!';
         setTimeout(() => { btnReset.textContent = 'Reset to Default'; }, 1000);
     });
 
-    btnCancel.addEventListener('click', close);
-    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-    shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
+    shadow.querySelector('.btn-cancel').addEventListener('click', close);
 }
 
 /**
  * Show usage statistics dialog
  */
 export function showStats(cacheSize) {
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);
              display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:600px;width:92%;border-radius:12px;
@@ -597,9 +538,9 @@ export function showStats(cacheSize) {
     const totalCalls = API_TOKENS.digest.calls;
     const estimatedCost = calculateApiCost();
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-    setHTML(wrap, `
+    const { shadow, close } = createDialog({
+        css,
+        bodyHTML: `
         <div class="modal">
             <h3>Usage Statistics</h3>
 
@@ -659,30 +600,17 @@ export function showStats(cacheSize) {
             <div class="actions">
                 <button class="btn btn-close">Close</button>
             </div>
-        </div>
-    `);
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
+        </div>`
+    });
 
-    const close = () => host.remove();
-    const btnClose = shadow.querySelector('.btn-close');
-    btnClose.addEventListener('click', close);
-    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-    shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
-
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
+    shadow.querySelector('.btn-close').addEventListener('click', close);
 }
 
 /**
  * Show domain list editor dialog
  */
 export function openDomainEditor(storage, mode, DOMAIN_ALLOW, DOMAIN_DENY) {
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:600px;width:90%;border-radius:12px;
@@ -708,29 +636,23 @@ export function openDomainEditor(storage, mode, DOMAIN_ALLOW, DOMAIN_DENY) {
         ? 'In ALLOW mode, the script only runs on these domains. One pattern per line. Supports wildcards (*.example.com) and regex (/pattern/).'
         : 'In DENY mode, the script is disabled on these domains. One pattern per line. Supports wildcards (*.example.com) and regex (/pattern/).';
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-    setHTML(wrap, `
+    const { shadow, close } = createDialog({
+        css,
+        bodyHTML: `
         <div class="modal">
-            <h3>${title}</h3>
-            <textarea>${list.join('\n')}</textarea>
-            <p class="hint">${hint}</p>
+            <h3>${escapeHtml(title)}</h3>
+            <textarea>${escapeHtml(list.join('\n'))}</textarea>
+            <p class="hint">${escapeHtml(hint)}</p>
             <div class="actions">
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Reload</button>
             </div>
-        </div>
-    `);
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
+        </div>`
+    });
 
     const textarea = shadow.querySelector('textarea');
-    const btnSave = shadow.querySelector('.btn-save');
-    const btnCancel = shadow.querySelector('.btn-cancel');
 
-    const close = () => host.remove();
-
-    btnSave.addEventListener('click', async () => {
+    shadow.querySelector('.btn-save').addEventListener('click', async () => {
         const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
         if (mode === 'allow') {
             await storage.set(STORAGE_KEYS.DOMAINS_ALLOW, JSON.stringify(lines));
@@ -740,23 +662,14 @@ export function openDomainEditor(storage, mode, DOMAIN_ALLOW, DOMAIN_DENY) {
         location.reload();
     });
 
-    btnCancel.addEventListener('click', close);
-    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-    shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
+    shadow.querySelector('.btn-cancel').addEventListener('click', close);
 }
 
 /**
  * Show unified selector editor dialog (global + domain-specific, tabbed)
  */
 export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selectorsDomain, excludeDomain, defaultSelectors, defaultExcludes, onSave }) {
-    const hostEl = document.createElement('div');
-    hostEl.setAttribute(UI_ATTR, '');
-    const shadow = hostEl.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.4);
               display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0}
         .modal{background:linear-gradient(135deg,#f8f9ff 0%,#fff5f7 100%);max-width:700px;width:96%;
@@ -814,13 +727,13 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
     const domExSelf = (excludeDomain.self || []).join('\n');
     const domExAnc = (excludeDomain.ancestors || []).join('\n');
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-    setHTML(wrap, `
+    const { shadow, close } = createDialog({
+        css,
+        bodyHTML: `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Edit Selectors">
             <div class="header">
                 <span class="header-title">Edit Selectors</span>
-                <button class="header-close" aria-label="Close">\u00d7</button>
+                <button class="header-close" aria-label="Close">×</button>
             </div>
             <div class="content">
                 <div class="tabs">
@@ -875,10 +788,8 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save &amp; Reload</button>
             </div>
-        </div>
-    `);
-    shadow.append(style, wrap);
-    document.body.appendChild(hostEl);
+        </div>`
+    });
 
     let activeTab = 'global';
 
@@ -893,13 +804,10 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
         });
     });
 
-    const close = () => hostEl.remove();
-
     const toLines = (val) => val.split('\n').map(l => l.trim()).filter(Boolean);
 
     const btnSave = shadow.querySelector('.btn-save');
     const btnReset = shadow.querySelector('.btn-reset');
-    const btnCancel = shadow.querySelector('.btn-cancel');
 
     btnSave.addEventListener('click', async () => {
         const data = {
@@ -915,7 +823,7 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
             }
         };
         await onSave(data);
-        btnSave.textContent = '\u2713 Saved!';
+        btnSave.textContent = '✓ Saved!';
         setTimeout(() => location.reload(), 800);
     });
 
@@ -933,11 +841,6 @@ export function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selec
         setTimeout(() => { btnReset.textContent = 'Reset Defaults'; }, 1000);
     });
 
-    btnCancel.addEventListener('click', close);
+    shadow.querySelector('.btn-cancel').addEventListener('click', close);
     shadow.querySelector('.header-close').addEventListener('click', close);
-    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-    shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
 }

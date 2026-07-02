@@ -19,6 +19,7 @@
 // @grant        GM_deleteValue
 // @grant        GM.deleteValue
 // @grant        GM_registerMenuCommand
+// @grant        GM.registerMenuCommand
 // @connect      api.openai.com
 // ==/UserScript==
 

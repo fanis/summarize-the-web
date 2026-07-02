@@ -1,53 +1,67 @@
 /**
  * Cache management for Summarize The Web
+ *
+ * Summaries are keyed by mode + a hash of the article text, so the stored
+ * blob stays small. Loading is lazy: pages that never summarize don't pay
+ * the JSON.parse cost, and writes happen immediately on set() (no polling).
  */
 
 import { STORAGE_KEYS, CACHE_LIMIT, CACHE_TRIM_TO } from './config.js';
-import { log } from './utils.js';
+import { hashText, log } from './utils.js';
+
+// Storage key of the pre-hash cache format (entries keyed by the full
+// article text). Deleted on first load; superseded by STORAGE_KEYS.CACHE.
+const LEGACY_CACHE_KEY = 'digest_cache_v1';
 
 export class DigestCache {
     constructor(storage) {
         this.storage = storage;
         this.cache = {};
         this.dirty = false;
+        this.loaded = null;
     }
 
     /**
-     * Initialize cache from storage
+     * Load cache from storage. Idempotent and lazy: get/set/getSize call it
+     * automatically, so callers don't need to initialize eagerly.
      */
-    async init() {
-        try {
-            const stored = await this.storage.get(STORAGE_KEYS.CACHE, '{}');
-            this.cache = JSON.parse(stored);
-        } catch {
-            this.cache = {};
+    init() {
+        if (!this.loaded) {
+            this.loaded = (async () => {
+                try {
+                    const stored = await this.storage.get(STORAGE_KEYS.CACHE, '{}');
+                    this.cache = JSON.parse(stored);
+                } catch {
+                    this.cache = {};
+                }
+                // Best-effort cleanup of the legacy full-text cache blob.
+                try { await this.storage.delete(LEGACY_CACHE_KEY); } catch {}
+            })();
         }
-
-        // Start periodic save
-        setInterval(() => this.save(), 5000);
+        return this.loaded;
     }
 
     /**
-     * Generate cache key
+     * Generate cache key (mode + text length + content hash)
      */
     key(text, mode) {
-        return `${mode}:${text}`;
+        return `${mode}:${text.length}:${hashText(text)}`;
     }
 
     /**
      * Get cached result
      */
-    get(text, mode) {
-        const key = this.key(text, mode);
-        return this.cache[key];
+    async get(text, mode) {
+        await this.init();
+        return this.cache[this.key(text, mode)];
     }
 
     /**
-     * Set cached result
+     * Set cached result (persists immediately)
      */
     async set(text, mode, result) {
-        const key = this.key(text, mode);
-        this.cache[key] = { result, timestamp: Date.now() };
+        await this.init();
+        this.cache[this.key(text, mode)] = { result, timestamp: Date.now() };
         this.dirty = true;
 
         // Trim cache if needed
@@ -70,6 +84,8 @@ export class DigestCache {
      */
     async clear() {
         this.cache = {};
+        this.dirty = false;
+        this.loaded = Promise.resolve();
         await this.storage.delete(STORAGE_KEYS.CACHE);
         log('cache cleared');
     }
@@ -84,7 +100,15 @@ export class DigestCache {
     }
 
     /**
-     * Get cache size
+     * Get cache size (loads the cache if needed)
+     */
+    async getSize() {
+        await this.init();
+        return Object.keys(this.cache).length;
+    }
+
+    /**
+     * Get cache size of the already-loaded cache (sync)
      */
     get size() {
         return Object.keys(this.cache).length;

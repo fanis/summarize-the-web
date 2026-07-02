@@ -58,6 +58,32 @@ export function listMatchesHost(list, hostname) {
 }
 
 /**
+ * Check whether an element is excluded by the given rules: the element
+ * itself matches a `self` selector, or any ancestor matches an `ancestors`
+ * selector. Invalid selectors are skipped.
+ * @param {Element} el - Element to check
+ * @param {Object} EXCLUDE - Object with self and ancestors selector arrays
+ * @returns {boolean}
+ */
+export function isExcludedElement(el, EXCLUDE) {
+    if (EXCLUDE.self) {
+        for (const sel of EXCLUDE.self) {
+            try {
+                if (el.matches(sel)) return true;
+            } catch {}
+        }
+    }
+    if (EXCLUDE.ancestors) {
+        for (const sel of EXCLUDE.ancestors) {
+            try {
+                if (el.closest(sel)) return true;
+            } catch {}
+        }
+    }
+    return false;
+}
+
+/**
  * Compile selector list into CSS selector string
  * @param {string[]} selectors - Array of CSS selectors
  * @returns {string} - Comma-separated selector string

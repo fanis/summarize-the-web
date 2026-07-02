@@ -1,10 +1,18 @@
 /**
  * Inspection mode functionality for debugging article container detection
+ *
+ * Functions here take an inspection context object (ctx) holding the merged
+ * selector configuration for the current page:
+ *   { SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN,
+ *     EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE,
+ *     storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo }
  */
 
-import { UI_ATTR, STORAGE_KEYS, DEFAULT_EXCLUDES } from './config.js';
-import { escapeHtml, textTrim, setHTML } from './utils.js';
-import { generateCSSSelector, findMatchingSelectors, findMatchingExclusions, compiledSelectors } from './selectors.js';
+import { UI_ATTR, STORAGE_KEYS } from './config.js';
+import { escapeHtml, textTrim } from './utils.js';
+import { createDialog } from './dialog.js';
+import { generateCSSSelector, findMatchingSelectors, findMatchingExclusions, compiledSelectors, isExcludedElement } from './selectors.js';
+import { selectContainers } from './extraction.js';
 
 let inspectionOverlay = null;
 let inspectedElement = null;
@@ -46,8 +54,9 @@ function findMostSpecificElement(x, y, SELECTORS) {
 
 /**
  * Enter inspection mode
+ * @param {Object} ctx - Inspection context (see module doc comment)
  */
-export function enterInspectionMode(SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo) {
+export function enterInspectionMode(ctx) {
     if (inspectionOverlay) return;
 
     const overlay = document.createElement('div');
@@ -79,7 +88,7 @@ export function enterInspectionMode(SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS
 
     let currentHighlight = null;
     const onMouseMove = (e) => {
-        const target = findMostSpecificElement(e.clientX, e.clientY, SELECTORS);
+        const target = findMostSpecificElement(e.clientX, e.clientY, ctx.SELECTORS);
         if (!target) return;
 
         if (currentHighlight && currentHighlight !== target) {
@@ -99,7 +108,7 @@ export function enterInspectionMode(SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS
     };
 
     const onClick = (e) => {
-        const target = findMostSpecificElement(e.clientX, e.clientY, SELECTORS);
+        const target = findMostSpecificElement(e.clientX, e.clientY, ctx.SELECTORS);
         if (!target) return;
 
         e.preventDefault();
@@ -120,7 +129,7 @@ export function enterInspectionMode(SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS
         inspectedElement.style.outlineOffset = '2px';
 
         exitInspectionMode();
-        showDiagnosticDialog(inspectedElement, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo);
+        showDiagnosticDialog(inspectedElement, ctx);
     };
 
     const onKeyDown = (e) => {
@@ -186,7 +195,9 @@ function findMatchingAncestor(el, selectors) {
 /**
  * Diagnose element for article container detection
  */
-function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE) {
+function diagnoseElement(el, ctx) {
+    const { SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE } = ctx;
+
     const text = textTrim(el);
     const selector = generateCSSSelector(el);
 
@@ -195,18 +206,7 @@ function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL,
     const globalExclusions = findMatchingExclusions(el, EXCLUDE_GLOBAL);
     const domainExclusions = findMatchingExclusions(el, EXCLUDE_DOMAIN);
 
-    // Check if element is excluded
-    let isExcluded = false;
-    if (EXCLUDE.self) {
-        for (const sel of EXCLUDE.self) {
-            try { if (el.matches(sel)) { isExcluded = true; break; } } catch {}
-        }
-    }
-    if (!isExcluded && EXCLUDE.ancestors) {
-        for (const sel of EXCLUDE.ancestors) {
-            try { if (el.closest(sel)) { isExcluded = true; break; } } catch {}
-        }
-    }
+    const isExcluded = isExcludedElement(el, EXCLUDE);
 
     const isMatched = globalSelectors.length > 0 || domainSelectors.length > 0;
     const isProcessed = isMatched && !isExcluded;
@@ -237,7 +237,7 @@ function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL,
         isMatched,
         isProcessed,
         textElementCount: filteredTextElements.length,
-        // New fields for "included via container"
+        // Fields for "included via container"
         isInsideContainer,
         ancestorMatch,
         isIncludedInSummary
@@ -247,15 +247,10 @@ function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL,
 /**
  * Show diagnostic dialog
  */
-function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo) {
-    const diag = diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE);
+function showDiagnosticDialog(el, ctx) {
+    const diag = diagnoseElement(el, ctx);
 
-    const host = document.createElement('div');
-    host.setAttribute(UI_ATTR, '');
-    const shadow = host.attachShadow({ mode: 'open' });
-
-    const style = document.createElement('style');
-    style.textContent = `
+    const css = `
         .wrap { position: fixed; inset: 0; z-index: 2147483647; background: rgba(0,0,0,.4);
                 display: flex; align-items: center; justify-content: center; }
         .modal { background: linear-gradient(135deg, #f8f9ff 0%, #fff5f7 100%); max-width: 700px; width: 96%;
@@ -311,9 +306,6 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
         .btn.small { padding: 6px 12px; font-size: 12px; }
     `;
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wrap';
-
     let statusClass, statusText;
     if (diag.isExcluded) {
         statusClass = 'excluded';
@@ -360,7 +352,20 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
         </ul>` :
         '<p class="info-row no-match">No domain exclusions configured or affect this element.</p>';
 
-    setHTML(wrap, `
+    const restoreInspectedOutline = () => {
+        if (inspectedElement) {
+            inspectedElement.style.outline = inspectedElement._origOutline || '';
+            inspectedElement.style.outlineOffset = inspectedElement._origOutlineOffset || '';
+            delete inspectedElement._origOutline;
+            delete inspectedElement._origOutlineOffset;
+            inspectedElement = null;
+        }
+    };
+
+    const { shadow, close } = createDialog({
+        css,
+        onClose: restoreInspectedOutline,
+        bodyHTML: `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Element Inspection">
             <div class="header">
                 <div class="header-title">Element Inspection</div>
@@ -373,8 +378,8 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
                 <div class="section">
                     <div class="section-title">Element Information</div>
                     <div class="info-row"><span class="info-label">Tag:</span> &lt;${diag.tag}&gt;</div>
-                    <div class="info-row"><span class="info-label">ID:</span> ${diag.id || '(none)'}</div>
-                    <div class="info-row"><span class="info-label">Classes:</span> ${diag.classes || '(none)'}</div>
+                    <div class="info-row"><span class="info-label">ID:</span> ${escapeHtml(diag.id) || '(none)'}</div>
+                    <div class="info-row"><span class="info-label">Classes:</span> ${escapeHtml(diag.classes) || '(none)'}</div>
                     <div class="info-row"><span class="info-label">Text length:</span> ${diag.fullTextLength} characters</div>
                     <div class="info-row"><span class="info-label">Text elements (p, li, etc.):</span> ${diag.textElementCount} with 40+ chars</div>
                     <div class="info-row"><span class="info-label">CSS Selector:</span> <span class="code">${escapeHtml(diag.selector)}</span></div>
@@ -389,7 +394,7 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
                 </div>
 
                 <div class="section">
-                    <div class="section-title">Domain Container Selectors (${HOST})</div>
+                    <div class="section-title">Domain Container Selectors (${escapeHtml(ctx.HOST)})</div>
                     ${domainSelectorsHTML}
                 </div>
 
@@ -399,40 +404,24 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
                 </div>
 
                 <div class="section">
-                    <div class="section-title">Domain Exclusions (${HOST})</div>
+                    <div class="section-title">Domain Exclusions (${escapeHtml(ctx.HOST)})</div>
                     ${domainExclusionsHTML}
                 </div>
             </div>
 
             <div class="footer">
                 <div class="footer-secondary">
-                    ${buildActionButtons(diag, HOST)}
+                    ${buildActionButtons(diag)}
                 </div>
                 <div class="footer-actions">
                     <button class="btn secondary copy-selector">Copy Selector</button>
                     <button class="btn primary close">Close</button>
                 </div>
             </div>
-        </div>
-    `);
-
-    shadow.append(style, wrap);
-    document.body.appendChild(host);
-
-    const close = () => {
-        if (inspectedElement) {
-            inspectedElement.style.outline = inspectedElement._origOutline || '';
-            inspectedElement.style.outlineOffset = inspectedElement._origOutlineOffset || '';
-            delete inspectedElement._origOutline;
-            delete inspectedElement._origOutlineOffset;
-            inspectedElement = null;
-        }
-        host.remove();
-    };
+        </div>`
+    });
 
     shadow.querySelectorAll('.close').forEach(btn => btn.addEventListener('click', close));
-    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-    shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
 
     shadow.querySelector('.copy-selector').addEventListener('click', () => {
         navigator.clipboard.writeText(diag.selector).then(() => {
@@ -443,16 +432,13 @@ function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCL
         });
     });
 
-    attachActionHandlers(shadow, diag, close, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, HOST, SELECTORS_GLOBAL, EXCLUDE_GLOBAL, openInfo);
-
-    wrap.setAttribute('tabindex', '-1');
-    wrap.focus();
+    attachActionHandlers(shadow, diag, close, ctx);
 }
 
 /**
  * Build action buttons for diagnostic dialog
  */
-function buildActionButtons(diag, HOST) {
+function buildActionButtons(diag) {
     const buttons = [];
 
     // Global Inclusions: Remove if matched, Add if not
@@ -505,7 +491,9 @@ function buildActionButtons(diag, HOST) {
 /**
  * Attach action handlers for diagnostic dialog
  */
-function attachActionHandlers(shadow, diag, closeDialog, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, HOST, SELECTORS_GLOBAL, EXCLUDE_GLOBAL, openInfo) {
+function attachActionHandlers(shadow, diag, closeDialog, ctx) {
+    const { storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, HOST, SELECTORS_GLOBAL, EXCLUDE_GLOBAL, openInfo } = ctx;
+
     // Remove global inclusions
     shadow.querySelectorAll('.remove-global-sel').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -623,23 +611,6 @@ function attachActionHandlers(shadow, diag, closeDialog, storage, DOMAIN_SELECTO
 }
 
 /**
- * Check if element is excluded
- */
-function isElementExcluded(el, EXCLUDE) {
-    if (EXCLUDE.self) {
-        for (const sel of EXCLUDE.self) {
-            try { if (el.matches(sel)) return true; } catch {}
-        }
-    }
-    if (EXCLUDE.ancestors) {
-        for (const sel of EXCLUDE.ancestors) {
-            try { if (el.closest(sel)) return true; } catch {}
-        }
-    }
-    return false;
-}
-
-/**
  * Show which elements would be included in summary
  */
 export function showSummaryHighlight(SELECTORS, EXCLUDE, minLength = 100) {
@@ -651,66 +622,24 @@ export function showSummaryHighlight(SELECTORS, EXCLUDE, minLength = 100) {
     summaryHighlightActive = true;
     highlightedElements = [];
 
-    // Get total page text for comparison
-    const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
-    const bodyLength = bodyText.length || 1;
-
-    // Collect all matching candidates with their text stats
-    const candidates = [];
-    for (const selector of SELECTORS) {
-        try {
-            const candidate = document.querySelector(selector);
-            if (!candidate) continue;
-
-            const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
-            const percent = Math.round((rawText.length / bodyLength) * 100);
-
-            candidates.push({ candidate, selector, text: rawText, length: rawText.length, percent });
-        } catch (e) {
-            // Invalid selector, skip
-        }
-    }
-
-    if (candidates.length === 0) {
+    const selection = selectContainers(SELECTORS, minLength);
+    if (!selection) {
         showHighlightMessage('No article container found matching configured selectors.', false);
         return;
     }
-
-    // Sort by text length descending
-    candidates.sort((a, b) => b.length - a.length);
-
-    const best = candidates[0];
-
-    // Check if one container is dominant
-    const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
-
-    let selectedContainers = [];
-
-    if (dominated) {
-        selectedContainers = [best];
-    } else {
-        // Multiple significant containers - combine non-nested ones
-        const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
-
-        // Filter out nested containers
-        const nonNested = significant.filter((c, i) =>
-            !significant.some((other, j) => i !== j &&
-                (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
-            )
-        );
-
-        if (nonNested.length > 1) {
-            selectedContainers = nonNested;
-        } else {
-            selectedContainers = [best];
-        }
-    }
+    const selectedContainers = selection.selected;
 
     // Text element selectors - these are the elements that actually contain readable text
     const textElementSelector = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, figcaption, dd, dt, pre, td, th';
 
     let includedCount = 0;
     let excludedCount = 0;
+
+    // Elements already highlighted, for skipping nested matches. Within a
+    // container, querySelectorAll returns document order, so ancestors are
+    // always visited before their descendants; a parent-chain lookup against
+    // this set replaces the previous O(n²) contains() scan.
+    const highlighted = new Set();
 
     // Find and highlight text elements within containers
     for (const c of selectedContainers) {
@@ -721,12 +650,15 @@ export function showSummaryHighlight(SELECTORS, EXCLUDE, minLength = 100) {
             const text = (el.innerText ?? el.textContent ?? '').trim();
             if (text.length < 10) continue;
 
-            // Skip if already highlighted (nested elements)
-            if (highlightedElements.some(h => h.element === el || h.element.contains(el) || el.contains(h.element))) {
-                continue;
+            // Skip if an ancestor is already highlighted (nested elements)
+            let insideHighlighted = false;
+            for (let anc = el.parentElement; anc; anc = anc.parentElement) {
+                if (highlighted.has(anc)) { insideHighlighted = true; break; }
             }
+            if (insideHighlighted || highlighted.has(el)) continue;
+            highlighted.add(el);
 
-            const excluded = isElementExcluded(el, EXCLUDE);
+            const excluded = isExcludedElement(el, EXCLUDE);
 
             highlightedElements.push({
                 element: el,

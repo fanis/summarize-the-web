@@ -1,17 +1,17 @@
 import { CFG, STORAGE_KEYS, MODEL_OPTIONS, DEFAULT_SELECTORS, DEFAULT_EXCLUDES, DEFAULT_PROMPTS, SIMPLIFICATION_LEVELS, DEFAULT_MIN_TEXT_LENGTH } from './modules/config.js';
-import { log, setHTML } from './modules/utils.js';
+import { log, registerMenuCommand } from './modules/utils.js';
 import { Storage } from './modules/storage.js';
 import { domainPatternToRegex, listMatchesHost } from './modules/selectors.js';
 import { initApiTracking, digestText, friendlyApiError, resetApiTokens, PRICING } from './modules/api.js';
 import { DigestCache } from './modules/cache.js';
 import {
-    openEditor, openInfo, openKeyDialog, openWelcomeDialog,
+    openInfo, openKeyDialog, openApiKeyEditor, openWelcomeDialog,
     openSimplificationStyleDialog, openModelSelectionDialog, openCustomPromptDialog,
     showStats, openDomainEditor, openSelectorEditor
 } from './modules/settings.js';
 import { enterInspectionMode, showSummaryHighlight, exitSummaryHighlight } from './modules/inspection.js';
 import { getTextToDigest } from './modules/extraction.js';
-import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, removeSummaryOverlay, BADGE_WIDTH } from './modules/overlay.js';
+import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, BADGE_WIDTH } from './modules/overlay.js';
 
 (async () => {
     'use strict';
@@ -27,27 +27,61 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     // Prevent multiple API key dialogs
     let apiKeyDialogShown = { value: false };
 
-    // Initialize API tracking
-    await initApiTracking(storage);
+    // Load all persisted settings in one parallel batch: GM storage calls go
+    // through the extension bridge, so ~20 sequential awaits are noticeably
+    // slower than a single Promise.all on every page load.
+    const [
+        debugRaw,
+        selectorsGlobalRaw,
+        excludesGlobalRaw,
+        domainSelectorsRaw,
+        domainExcludesRaw,
+        domainsModeRaw,
+        domainDenyRaw,
+        domainAllowRaw,
+        customPromptRaw,
+        simplificationRaw,
+        overlayCollapsedRaw,
+        overlayPosRaw,
+        autoSimplifyRaw,
+        minTextLengthRaw,
+        firstInstallRaw,
+        apiKeyRaw,
+        justEnabledRaw
+    ] = await Promise.all([
+        storage.get(STORAGE_KEYS.DEBUG, ''),
+        storage.get(STORAGE_KEYS.SELECTORS_GLOBAL, ''),
+        storage.get(STORAGE_KEYS.EXCLUDES_GLOBAL, ''),
+        storage.get(STORAGE_KEYS.DOMAIN_SELECTORS, '{}'),
+        storage.get(STORAGE_KEYS.DOMAIN_EXCLUDES, '{}'),
+        storage.get(STORAGE_KEYS.DOMAINS_MODE, 'allow'),
+        storage.get(STORAGE_KEYS.DOMAINS_DENY, '[]'),
+        storage.get(STORAGE_KEYS.DOMAINS_ALLOW, '[]'),
+        storage.get(STORAGE_KEYS.CUSTOM_PROMPT, ''),
+        storage.get(STORAGE_KEYS.SIMPLIFICATION_STRENGTH, ''),
+        storage.get(STORAGE_KEYS.OVERLAY_COLLAPSED, ''),
+        storage.get(STORAGE_KEYS.OVERLAY_POS, ''),
+        storage.get(STORAGE_KEYS.AUTO_SIMPLIFY, ''),
+        storage.get(STORAGE_KEYS.MIN_TEXT_LENGTH, ''),
+        storage.get(STORAGE_KEYS.FIRST_INSTALL, ''),
+        storage.get(STORAGE_KEYS.OPENAI_KEY, ''),
+        storage.get(STORAGE_KEYS.JUST_ENABLED, ''),
+        initApiTracking(storage)
+    ]);
 
-    // Load toggles
-    try { const v = await storage.get(STORAGE_KEYS.DEBUG, ''); if (v !== '') CFG.DEBUG = (v === true || v === 'true'); } catch {}
+    // Debug toggle
+    if (debugRaw !== '') CFG.DEBUG = (debugRaw === true || debugRaw === 'true');
 
-    // Domain mode + lists
-    let DOMAINS_MODE = 'allow';
-    let DOMAIN_DENY = [];
-    let DOMAIN_ALLOW = [];
-
-    // Load persisted data
+    // Article extraction selectors (global + per-domain)
     let SELECTORS_GLOBAL = [...DEFAULT_SELECTORS];
     let EXCLUDE_GLOBAL = { ...DEFAULT_EXCLUDES, ancestors: [...DEFAULT_EXCLUDES.ancestors] };
     let DOMAIN_SELECTORS = {};
     let DOMAIN_EXCLUDES = {};
 
-    try { SELECTORS_GLOBAL = JSON.parse(await storage.get(STORAGE_KEYS.SELECTORS_GLOBAL, JSON.stringify(DEFAULT_SELECTORS))); } catch {}
-    try { EXCLUDE_GLOBAL = JSON.parse(await storage.get(STORAGE_KEYS.EXCLUDES_GLOBAL, JSON.stringify(DEFAULT_EXCLUDES))); } catch {}
-    try { DOMAIN_SELECTORS = JSON.parse(await storage.get(STORAGE_KEYS.DOMAIN_SELECTORS, '{}')); } catch {}
-    try { DOMAIN_EXCLUDES = JSON.parse(await storage.get(STORAGE_KEYS.DOMAIN_EXCLUDES, '{}')); } catch {}
+    try { if (selectorsGlobalRaw) SELECTORS_GLOBAL = JSON.parse(selectorsGlobalRaw); } catch {}
+    try { if (excludesGlobalRaw) EXCLUDE_GLOBAL = JSON.parse(excludesGlobalRaw); } catch {}
+    try { DOMAIN_SELECTORS = JSON.parse(domainSelectorsRaw); } catch {}
+    try { DOMAIN_EXCLUDES = JSON.parse(domainExcludesRaw); } catch {}
 
     // Load domain-specific settings for current host
     let SELECTORS_DOMAIN = DOMAIN_SELECTORS[HOST] || [];
@@ -64,49 +98,46 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         log('domain-specific additions for', HOST, ':', { selectors: SELECTORS_DOMAIN, excludes: EXCLUDE_DOMAIN });
     }
 
-    try { DOMAINS_MODE = await storage.get(STORAGE_KEYS.DOMAINS_MODE, 'allow'); } catch {}
-    try { DOMAIN_DENY = JSON.parse(await storage.get(STORAGE_KEYS.DOMAINS_DENY, '[]')); } catch {}
-    try { DOMAIN_ALLOW = JSON.parse(await storage.get(STORAGE_KEYS.DOMAINS_ALLOW, '[]')); } catch {}
+    // Domain mode + lists
+    let DOMAINS_MODE = domainsModeRaw || 'allow';
+    let DOMAIN_DENY = [];
+    let DOMAIN_ALLOW = [];
+    try { DOMAIN_DENY = JSON.parse(domainDenyRaw); } catch {}
+    try { DOMAIN_ALLOW = JSON.parse(domainAllowRaw); } catch {}
 
     // Load prompts
     let CUSTOM_PROMPTS = { ...DEFAULT_PROMPTS };
-    try { const v = await storage.get(STORAGE_KEYS.CUSTOM_PROMPT, ''); if (v) CUSTOM_PROMPTS = JSON.parse(v); } catch {}
+    try { if (customPromptRaw) CUSTOM_PROMPTS = JSON.parse(customPromptRaw); } catch {}
 
     // Load simplification style
     let SIMPLIFICATION_LEVEL = 'Balanced';
-    try {
-        const v = await storage.get(STORAGE_KEYS.SIMPLIFICATION_STRENGTH, '');
-        log('Loaded simplification style from storage:', v, 'valid:', SIMPLIFICATION_LEVELS.includes(v));
-        if (v && SIMPLIFICATION_LEVELS.includes(v)) {
-            SIMPLIFICATION_LEVEL = v;
-        }
-    } catch {}
+    log('Loaded simplification style from storage:', simplificationRaw, 'valid:', SIMPLIFICATION_LEVELS.includes(simplificationRaw));
+    if (simplificationRaw && SIMPLIFICATION_LEVELS.includes(simplificationRaw)) {
+        SIMPLIFICATION_LEVEL = simplificationRaw;
+    }
     log('Using simplification level:', SIMPLIFICATION_LEVEL);
 
     // Overlay state
     let OVERLAY_COLLAPSED = { value: false };
-    try { const v = await storage.get(STORAGE_KEYS.OVERLAY_COLLAPSED, ''); if (v !== '') OVERLAY_COLLAPSED.value = (v === true || v === 'true'); } catch {}
+    if (overlayCollapsedRaw !== '') OVERLAY_COLLAPSED.value = (overlayCollapsedRaw === true || overlayCollapsedRaw === 'true');
 
     let OVERLAY_POS = { x: document.documentElement.clientWidth - BADGE_WIDTH, y: window.innerHeight * 0.7 };
-    try { const v = await storage.get(STORAGE_KEYS.OVERLAY_POS, ''); if (v) OVERLAY_POS = JSON.parse(v); } catch {}
+    try { if (overlayPosRaw) OVERLAY_POS = JSON.parse(overlayPosRaw); } catch {}
 
     // Auto-simplify setting
     let AUTO_SIMPLIFY = false;
-    try { const v = await storage.get(STORAGE_KEYS.AUTO_SIMPLIFY, ''); if (v !== '') AUTO_SIMPLIFY = (v === true || v === 'true'); } catch {}
+    if (autoSimplifyRaw !== '') AUTO_SIMPLIFY = (autoSimplifyRaw === true || autoSimplifyRaw === 'true');
 
     // Minimum text length for extraction
     let MIN_TEXT_LENGTH = DEFAULT_MIN_TEXT_LENGTH;
-    try {
-        const v = await storage.get(STORAGE_KEYS.MIN_TEXT_LENGTH, '');
-        if (v !== '') {
-            const parsed = parseInt(v, 10);
-            if (!isNaN(parsed) && parsed >= 0) MIN_TEXT_LENGTH = parsed;
-        }
-    } catch {}
+    if (minTextLengthRaw !== '') {
+        const parsed = parseInt(minTextLengthRaw, 10);
+        if (!isNaN(parsed) && parsed >= 0) MIN_TEXT_LENGTH = parsed;
+    }
 
-    // Initialize cache
+    // Cache loads lazily on first use, so disabled/idle pages skip the
+    // JSON.parse of the stored summaries entirely.
     const cache = new DigestCache(storage);
-    await cache.init();
 
     // Domain matching
     function computeDomainDisabled(host) {
@@ -118,9 +149,9 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     log('domain check:', HOST, 'mode=', DOMAINS_MODE, 'disabled=', DOMAIN_DISABLED);
 
     // Register Domain Controls menu BEFORE early return so users can enable disabled domains
-    GM_registerMenuCommand?.('--- Domain Controls ---', () => {});
+    registerMenuCommand('--- Domain Controls ---', () => {});
 
-    GM_registerMenuCommand?.(
+    registerMenuCommand(
         DOMAINS_MODE === 'allow' ? 'Domain mode: Allowlist only' : 'Domain mode: All domains with Denylist',
         async () => {
             DOMAINS_MODE = (DOMAINS_MODE === 'allow') ? 'deny' : 'allow';
@@ -129,7 +160,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         }
     );
 
-    GM_registerMenuCommand?.(
+    registerMenuCommand(
         computeDomainDisabled(HOST) ? `Current page: DISABLED (click to enable)` : `Current page: ENABLED (click to disable)`,
         async () => {
             const wasDisabled = computeDomainDisabled(HOST);
@@ -156,17 +187,13 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         }
     );
 
-    GM_registerMenuCommand?.('Edit domain allowlist', () => {
+    registerMenuCommand('Edit domain allowlist', () => {
         openDomainEditor(storage, 'allow', DOMAIN_ALLOW, DOMAIN_DENY);
     });
 
-    GM_registerMenuCommand?.('Edit domain denylist', () => {
+    registerMenuCommand('Edit domain denylist', () => {
         openDomainEditor(storage, 'deny', DOMAIN_ALLOW, DOMAIN_DENY);
     });
-
-    // Original article content (for restore functionality)
-    let originalContent = null;
-    let lastSummarizedContainer = null;
 
     // Digest handler
     async function handleDigest(size) {
@@ -200,13 +227,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
                 return;
             }
 
-            const { text, elements, source, container } = textData;
-
-            // Store original content for restore
-            if (source === 'article' && container && !originalContent) {
-                originalContent = container.innerHTML;
-                lastSummarizedContainer = container;
-            }
+            const { text, source, container } = textData;
 
             log(`Digesting ${text.length} chars from ${source}`);
 
@@ -219,13 +240,12 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
                 prompt,
                 SIMPLIFICATION_LEVEL,
                 (t, m) => cache.get(t, m),
-                async (t, m, r) => await cache.set(t, m, r),
-                (msg) => openKeyDialog(storage, msg, apiKeyDialogShown),
-                openInfo
+                (t, m, r) => cache.set(t, m, r),
+                (msg) => openKeyDialog(storage, msg, apiKeyDialogShown)
             );
 
             updateOverlayStatus('digested', mode);
-            showSummaryOverlay(result, mode, container, OVERLAY_COLLAPSED, restoreOriginal, storage);
+            showSummaryOverlay(result, mode, container, OVERLAY_COLLAPSED, storage);
 
         } catch (err) {
             console.error('Digest error:', err);
@@ -234,25 +254,14 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         }
     }
 
-    // Restore original article content
-    function restoreOriginal() {
-        if (originalContent && lastSummarizedContainer) {
-            setHTML(lastSummarizedContainer, originalContent);
-            originalContent = null;
-            lastSummarizedContainer = null;
-        }
-        updateOverlayStatus('ready');
-        removeSummaryOverlay();
-    }
-
     // Inspection mode handler
     function handleInspection() {
         exitSummaryHighlight();
-        enterInspectionMode(
+        enterInspectionMode({
             SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN,
             EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE,
             storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo
-        );
+        });
     }
 
     // Summary highlight handler
@@ -292,39 +301,25 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     }
 
     // Menu commands
-    GM_registerMenuCommand?.('--- Configuration ---', () => {});
+    registerMenuCommand('--- Configuration ---', () => {});
 
-    GM_registerMenuCommand?.('Set / Validate OpenAI API key', async () => {
-        const current = await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-        openEditor({
-            title: 'OpenAI API key',
-            mode: 'secret',
-            initial: current,
-            hint: 'Stored locally (GM → localStorage → memory). Validate sends GET /v1/models.',
-            onSave: async (val) => { await storage.set(STORAGE_KEYS.OPENAI_KEY, val); },
-            onValidate: async (val) => {
-                const { xhrGet } = await import('./modules/api.js');
-                const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-                if (!key) { openInfo('No key to test'); return; }
-                try { await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` }); openInfo('Validation OK (HTTP 200)'); }
-                catch (e) { openInfo(`Validation failed: ${e.message || e}`); }
-            }
-        });
+    registerMenuCommand('Set / Validate OpenAI API key', () => {
+        openApiKeyEditor(storage);
     });
 
-    GM_registerMenuCommand?.(`Select AI Model (${MODEL_OPTIONS[CFG.model]?.name || CFG.model})`, () => {
+    registerMenuCommand(`Select AI Model (${MODEL_OPTIONS[CFG.model]?.name || CFG.model})`, () => {
         openModelSelectionDialog(storage, CFG.model, setModel);
     });
 
-    GM_registerMenuCommand?.(`Simplification style (${SIMPLIFICATION_LEVEL})`, () => {
+    registerMenuCommand(`Simplification style (${SIMPLIFICATION_LEVEL})`, () => {
         openSimplificationStyleDialog(storage, SIMPLIFICATION_LEVEL, setSimplification);
     });
 
-    GM_registerMenuCommand?.('Custom prompts', () => {
+    registerMenuCommand('Custom prompts', () => {
         openCustomPromptDialog(storage, CUSTOM_PROMPTS, setCustomPrompts);
     });
 
-    GM_registerMenuCommand?.(`Minimum text length (${MIN_TEXT_LENGTH} chars)`, () => {
+    registerMenuCommand(`Minimum text length (${MIN_TEXT_LENGTH} chars)`, () => {
         const input = prompt(`Minimum text length for extraction (current: ${MIN_TEXT_LENGTH} chars):`, MIN_TEXT_LENGTH);
         if (input === null) return;
         const val = parseInt(input, 10);
@@ -368,47 +363,47 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         });
     }
 
-    GM_registerMenuCommand?.('Edit Selectors', handleEditSelectors);
+    registerMenuCommand('Edit Selectors', handleEditSelectors);
 
     // Toggles
-    GM_registerMenuCommand?.('--- Toggles ---', () => {});
+    registerMenuCommand('--- Toggles ---', () => {});
 
-    GM_registerMenuCommand?.(`Toggle DEBUG logs (${CFG.DEBUG ? 'ON' : 'OFF'})`, async () => {
+    registerMenuCommand(`Toggle DEBUG logs (${CFG.DEBUG ? 'ON' : 'OFF'})`, async () => {
         CFG.DEBUG = !CFG.DEBUG;
         await storage.set(STORAGE_KEYS.DEBUG, String(CFG.DEBUG));
         location.reload();
     });
 
-    GM_registerMenuCommand?.(`Toggle auto-simplify (${AUTO_SIMPLIFY ? 'ON' : 'OFF'})`, async () => {
+    registerMenuCommand(`Toggle auto-simplify (${AUTO_SIMPLIFY ? 'ON' : 'OFF'})`, async () => {
         await setAutoSimplify(!AUTO_SIMPLIFY);
     });
 
     // Actions
-    GM_registerMenuCommand?.('--- Actions ---', () => {});
+    registerMenuCommand('--- Actions ---', () => {});
 
-    GM_registerMenuCommand?.('Show usage statistics', () => {
-        showStats(cache.size);
+    registerMenuCommand('Show usage statistics', async () => {
+        showStats(await cache.getSize());
     });
 
-    GM_registerMenuCommand?.('Flush cache & reload', async () => {
+    registerMenuCommand('Flush cache & reload', async () => {
         await cache.clear();
         location.reload();
     });
 
-    GM_registerMenuCommand?.('Reset API usage stats', async () => {
+    registerMenuCommand('Reset API usage stats', async () => {
         await resetApiTokens(storage);
         openInfo('API usage stats reset. Token counters and cost tracking cleared.');
     });
 
-    GM_registerMenuCommand?.('Inspect element', handleInspection);
+    registerMenuCommand('Inspect element', handleInspection);
 
-    GM_registerMenuCommand?.('Included in summary', () => {
+    registerMenuCommand('Included in summary', () => {
         showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
     });
 
     // Bootstrap
-    const isFirstInstall = await storage.get(STORAGE_KEYS.FIRST_INSTALL, '') === '';
-    const hasApiKey = (await storage.get(STORAGE_KEYS.OPENAI_KEY, '')) !== '';
+    const isFirstInstall = firstInstallRaw === '';
+    const hasApiKey = apiKeyRaw !== '';
 
     if (isFirstInstall) {
         log('First install detected');
@@ -435,8 +430,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     }
 
     // If domain was just enabled, force overlay open and clear the flag
-    const justEnabled = await storage.get(STORAGE_KEYS.JUST_ENABLED, '');
-    if (justEnabled === 'true') {
+    if (justEnabledRaw === 'true') {
         OVERLAY_COLLAPSED.value = false;
         await storage.set(STORAGE_KEYS.OVERLAY_COLLAPSED, 'false');
         await storage.set(STORAGE_KEYS.JUST_ENABLED, '');

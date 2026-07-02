@@ -19,6 +19,7 @@
 // @grant        GM_deleteValue
 // @grant        GM.deleteValue
 // @grant        GM_registerMenuCommand
+// @grant        GM.registerMenuCommand
 // @connect      api.openai.com
 // ==/UserScript==
 
@@ -110,7 +111,7 @@
         FIRST_INSTALL: 'digest_installed_v1',
         API_TOKENS: 'digest_api_tokens_v1',
         PRICING: 'digest_pricing_v1',
-        CACHE: 'digest_cache_v1',
+        CACHE: 'digest_cache_v2',
         MODEL: 'digest_model_v1',
         // Article extraction selectors
         SELECTORS_GLOBAL: 'digest_selectors_v1',
@@ -266,19 +267,65 @@
      * Creates a Trusted Types policy if the browser enforces it, otherwise falls back to plain innerHTML.
      */
     let trustedPolicy = null;
+    let trustedPolicyFailed = false;
     function setHTML(el, html) {
         try {
             el.innerHTML = html;
         } catch {
-            if (!trustedPolicy && typeof window.trustedTypes !== 'undefined') {
-                trustedPolicy = window.trustedTypes.createPolicy('summarize-the-web', {
-                    createHTML: (s) => s
-                });
+            if (!trustedPolicy && !trustedPolicyFailed && typeof window.trustedTypes !== 'undefined') {
+                try {
+                    trustedPolicy = window.trustedTypes.createPolicy('summarize-the-web', {
+                        createHTML: (s) => s
+                    });
+                } catch {
+                    // createPolicy itself throws when the CSP's trusted-types
+                    // directive allowlists other names, or when the policy name
+                    // was already registered (script injected twice).
+                    trustedPolicyFailed = true;
+                }
             }
             if (trustedPolicy) {
-                el.innerHTML = trustedPolicy.createHTML(html);
+                try {
+                    el.innerHTML = trustedPolicy.createHTML(html);
+                } catch {}
             }
         }
+    }
+
+    /**
+     * Fast non-cryptographic hash (FNV-1a, 32-bit) used for cache keys.
+     * Returned as base-36 for compact storage.
+     */
+    function hashText(s) {
+        let h = 0x811c9dc5;
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+        }
+        return (h >>> 0).toString(36);
+    }
+
+    /**
+     * Register a userscript menu command across managers.
+     * Greasemonkey 4 only provides GM.registerMenuCommand; note that optional
+     * chaining alone (GM_registerMenuCommand?.()) still throws a ReferenceError
+     * when the legacy identifier is not declared, so a typeof guard is required.
+     * @returns {boolean} - Whether a menu API was available
+     */
+    function registerMenuCommand(label, fn) {
+        try {
+            if (typeof GM_registerMenuCommand === 'function') {
+                GM_registerMenuCommand(label, fn);
+                return true;
+            }
+        } catch {}
+        try {
+            if (typeof GM !== 'undefined' && typeof GM.registerMenuCommand === 'function') {
+                GM.registerMenuCommand(label, fn);
+                return true;
+            }
+        } catch {}
+        return false;
     }
 
     /**
@@ -475,6 +522,32 @@
     }
 
     /**
+     * Check whether an element is excluded by the given rules: the element
+     * itself matches a `self` selector, or any ancestor matches an `ancestors`
+     * selector. Invalid selectors are skipped.
+     * @param {Element} el - Element to check
+     * @param {Object} EXCLUDE - Object with self and ancestors selector arrays
+     * @returns {boolean}
+     */
+    function isExcludedElement(el, EXCLUDE) {
+        if (EXCLUDE.self) {
+            for (const sel of EXCLUDE.self) {
+                try {
+                    if (el.matches(sel)) return true;
+                } catch {}
+            }
+        }
+        if (EXCLUDE.ancestors) {
+            for (const sel of EXCLUDE.ancestors) {
+                try {
+                    if (el.closest(sel)) return true;
+                } catch {}
+            }
+        }
+        return false;
+    }
+
+    /**
      * Compile selector list into CSS selector string
      * @param {string[]} selectors - Array of CSS selectors
      * @returns {string} - Comma-separated selector string
@@ -602,26 +675,27 @@
      * Initialize API tracking from storage
      */
     async function initApiTracking(storage) {
+        const [tokensRaw, pricingRaw, modelRaw] = await Promise.all([
+            storage.get(STORAGE_KEYS.API_TOKENS, ''),
+            storage.get(STORAGE_KEYS.PRICING, ''),
+            storage.get(STORAGE_KEYS.MODEL, '')
+        ]);
+
         try {
-            const stored = await storage.get(STORAGE_KEYS.API_TOKENS, '');
-            if (stored) API_TOKENS = JSON.parse(stored);
+            if (tokensRaw) API_TOKENS = JSON.parse(tokensRaw);
         } catch {}
 
         try {
-            const stored = await storage.get(STORAGE_KEYS.PRICING, '');
-            if (stored) PRICING = JSON.parse(stored);
+            if (pricingRaw) PRICING = JSON.parse(pricingRaw);
         } catch {}
 
-        // Load saved model preference
-        try {
-            const stored = await storage.get(STORAGE_KEYS.MODEL, '');
-            if (stored && MODEL_OPTIONS[stored]) {
-                CFG.model = stored;
-                PRICING.model = stored;
-                PRICING.inputPer1M = MODEL_OPTIONS[stored].inputPer1M;
-                PRICING.outputPer1M = MODEL_OPTIONS[stored].outputPer1M;
-            }
-        } catch {}
+        // Apply saved model preference
+        if (modelRaw && MODEL_OPTIONS[modelRaw]) {
+            CFG.model = modelRaw;
+            PRICING.model = modelRaw;
+            PRICING.inputPer1M = MODEL_OPTIONS[modelRaw].inputPer1M;
+            PRICING.outputPer1M = MODEL_OPTIONS[modelRaw].outputPer1M;
+        }
     }
 
     /**
@@ -705,6 +779,19 @@
         return '';
     }
 
+    // Debounced token-stat persistence; flushed on page hide so a navigation
+    // right after a summary doesn't lose the update.
+    let pendingTokenSave = null;
+    let tokenStorage = null;
+    let tokenFlushRegistered = false;
+
+    function flushPendingTokenSave() {
+        if (!pendingTokenSave) return;
+        clearTimeout(pendingTokenSave);
+        pendingTokenSave = null;
+        tokenStorage?.set(STORAGE_KEYS.API_TOKENS, JSON.stringify(API_TOKENS));
+    }
+
     /**
      * Update API token usage stats
      */
@@ -725,8 +812,18 @@
 
         log(`${type} tokens: +${inputTokens} input, +${outputTokens} output (total: ${API_TOKENS[type].input + API_TOKENS[type].output})`);
 
-        clearTimeout(updateApiTokens._timer);
-        updateApiTokens._timer = setTimeout(() => {
+        tokenStorage = storage;
+        if (!tokenFlushRegistered) {
+            tokenFlushRegistered = true;
+            window.addEventListener('pagehide', flushPendingTokenSave);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') flushPendingTokenSave();
+            });
+        }
+
+        clearTimeout(pendingTokenSave);
+        pendingTokenSave = setTimeout(() => {
+            pendingTokenSave = null;
             storage.set(STORAGE_KEYS.API_TOKENS, JSON.stringify(API_TOKENS));
             log('API tokens updated and saved:', API_TOKENS);
         }, 1000);
@@ -755,7 +852,7 @@
     /**
      * Call OpenAI API to digest text
      */
-    async function digestText(storage, text, mode, prompt, styleLevel, cacheGet, cacheSet, openKeyDialog, openInfo) {
+    async function digestText(storage, text, mode, prompt, styleLevel, cacheGet, cacheSet, openKeyDialog) {
         const KEY = await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
         if (!KEY) {
             openKeyDialog('OpenAI API key missing.');
@@ -763,7 +860,7 @@
         }
 
         // Check cache first
-        const cached = cacheGet(text, mode);
+        const cached = await cacheGet(text, mode);
         if (cached) {
             log(`Using cached summary for ${mode} mode`);
             return cached.result;
@@ -859,70 +956,68 @@
         openInfo(`Unknown error${s ? ' (' + s + ')' : ''}. Check your network or try again.`);
     }
 
-    var api = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        get API_TOKENS () { return API_TOKENS; },
-        get PRICING () { return PRICING; },
-        apiHeaders: apiHeaders,
-        calculateApiCost: calculateApiCost,
-        digestText: digestText,
-        extractOutputText: extractOutputText,
-        friendlyApiError: friendlyApiError,
-        initApiTracking: initApiTracking,
-        resetApiTokens: resetApiTokens,
-        updateApiTokens: updateApiTokens,
-        xhrGet: xhrGet,
-        xhrPost: xhrPost
-    });
-
     /**
      * Cache management for Summarize The Web
+     *
+     * Summaries are keyed by mode + a hash of the article text, so the stored
+     * blob stays small. Loading is lazy: pages that never summarize don't pay
+     * the JSON.parse cost, and writes happen immediately on set() (no polling).
      */
 
+
+    // Storage key of the pre-hash cache format (entries keyed by the full
+    // article text). Deleted on first load; superseded by STORAGE_KEYS.CACHE.
+    const LEGACY_CACHE_KEY = 'digest_cache_v1';
 
     class DigestCache {
         constructor(storage) {
             this.storage = storage;
             this.cache = {};
             this.dirty = false;
+            this.loaded = null;
         }
 
         /**
-         * Initialize cache from storage
+         * Load cache from storage. Idempotent and lazy: get/set/getSize call it
+         * automatically, so callers don't need to initialize eagerly.
          */
-        async init() {
-            try {
-                const stored = await this.storage.get(STORAGE_KEYS.CACHE, '{}');
-                this.cache = JSON.parse(stored);
-            } catch {
-                this.cache = {};
+        init() {
+            if (!this.loaded) {
+                this.loaded = (async () => {
+                    try {
+                        const stored = await this.storage.get(STORAGE_KEYS.CACHE, '{}');
+                        this.cache = JSON.parse(stored);
+                    } catch {
+                        this.cache = {};
+                    }
+                    // Best-effort cleanup of the legacy full-text cache blob.
+                    try { await this.storage.delete(LEGACY_CACHE_KEY); } catch {}
+                })();
             }
-
-            // Start periodic save
-            setInterval(() => this.save(), 5000);
+            return this.loaded;
         }
 
         /**
-         * Generate cache key
+         * Generate cache key (mode + text length + content hash)
          */
         key(text, mode) {
-            return `${mode}:${text}`;
+            return `${mode}:${text.length}:${hashText(text)}`;
         }
 
         /**
          * Get cached result
          */
-        get(text, mode) {
-            const key = this.key(text, mode);
-            return this.cache[key];
+        async get(text, mode) {
+            await this.init();
+            return this.cache[this.key(text, mode)];
         }
 
         /**
-         * Set cached result
+         * Set cached result (persists immediately)
          */
         async set(text, mode, result) {
-            const key = this.key(text, mode);
-            this.cache[key] = { result, timestamp: Date.now() };
+            await this.init();
+            this.cache[this.key(text, mode)] = { result, timestamp: Date.now() };
             this.dirty = true;
 
             // Trim cache if needed
@@ -945,6 +1040,8 @@
          */
         async clear() {
             this.cache = {};
+            this.dirty = false;
+            this.loaded = Promise.resolve();
             await this.storage.delete(STORAGE_KEYS.CACHE);
             log('cache cleared');
         }
@@ -959,11 +1056,77 @@
         }
 
         /**
-         * Get cache size
+         * Get cache size (loads the cache if needed)
+         */
+        async getSize() {
+            await this.init();
+            return Object.keys(this.cache).length;
+        }
+
+        /**
+         * Get cache size of the already-loaded cache (sync)
          */
         get size() {
             return Object.keys(this.cache).length;
         }
+    }
+
+    /**
+     * Shared modal dialog scaffolding for Summarize The Web
+     *
+     * Every dialog (settings, editors, inspection) uses the same shell: a host
+     * element with a shadow root for CSS isolation, a fixed backdrop wrapper,
+     * close-on-backdrop-click, close-on-Escape and initial focus.
+     */
+
+
+    /**
+     * Create a modal dialog inside a shadow root.
+     * @param {Object} options
+     * @param {string} options.css - Stylesheet for the shadow root (must style .wrap)
+     * @param {string} options.bodyHTML - Markup rendered inside the .wrap backdrop
+     * @param {Function} [options.onClose] - Called after the dialog is removed, on any close path
+     * @param {boolean} [options.closeOnBackdrop=true] - Close when the backdrop is clicked
+     * @param {boolean} [options.closeOnEscape=true] - Close when Escape is pressed
+     * @param {boolean} [options.focusWrap=true] - Focus the backdrop wrapper so key events land in the shadow root
+     * @returns {{ host: HTMLElement, shadow: ShadowRoot, wrap: HTMLElement, close: Function }}
+     */
+    function createDialog({ css, bodyHTML, onClose = null, closeOnBackdrop = true, closeOnEscape = true, focusWrap = true }) {
+        const host = document.createElement('div');
+        host.setAttribute(UI_ATTR, '');
+        const shadow = host.attachShadow({ mode: 'open' });
+
+        const style = document.createElement('style');
+        style.textContent = css;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'wrap';
+        setHTML(wrap, bodyHTML);
+
+        shadow.append(style, wrap);
+        document.body.appendChild(host);
+
+        const close = () => {
+            host.remove();
+            onClose?.();
+        };
+
+        if (closeOnBackdrop) {
+            wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+        }
+        if (closeOnEscape) {
+            shadow.addEventListener('keydown', e => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    close();
+                }
+            });
+        }
+
+        wrap.setAttribute('tabindex', '-1');
+        if (focusWrap) wrap.focus();
+
+        return { host, shadow, wrap, close };
     }
 
     /**
@@ -972,14 +1135,29 @@
 
 
     /**
+     * Build a validator callback that tests an OpenAI key via GET /v1/models.
+     * Shared by the key editor, the missing-key dialog and the welcome flow.
+     */
+    function makeKeyValidator(storage, { success = 'Validation OK (HTTP 200)', empty = 'No key to test' } = {}) {
+        return async (val) => {
+            const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
+            if (!key) { openInfo(empty); return; }
+            try {
+                await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` });
+                openInfo(success);
+            } catch (e) {
+                openInfo(`Validation failed: ${e.message || e}`);
+            }
+        };
+    }
+
+    const KEY_HINT = 'Stored locally (GM → localStorage → memory). Validate sends GET /v1/models.';
+
+    /**
      * Polymorphic editor for lists, secrets, domains, and info display
      */
-    function openEditor({ title, hint = 'One item per line', mode = 'list', initial = [], globalItems = [], onSave, onValidate }) {
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+    function openEditor({ title, hint = 'One item per line', mode = 'list', initial = [], globalItems = [], onSave, onValidate, onClose }) {
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:680px;width:92%;border-radius:10px;
@@ -999,25 +1177,22 @@
         .actions .test{background:#34a853;color:#fff;border-color:#34a853}
         .hint{margin:8px 0 0;color:#666;font:12px/1.2 system-ui,sans-serif}
     `;
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-        const bodyList = `<textarea spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${
-        Array.isArray(initial) ? initial.join('\n') : ''
-    }</textarea>`;
+
+        const listText = (items) => escapeHtml(Array.isArray(items) ? items.join('\n') : String(items));
+
+        const bodyList = `<textarea spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${listText(initial)}</textarea>`;
         const bodyDomain = `
         <div class="section-label">Global settings (read-only):</div>
-        <textarea class="readonly" readonly spellcheck="false">${Array.isArray(globalItems) ? globalItems.join('\n') : ''}</textarea>
+        <textarea class="readonly" readonly spellcheck="false">${listText(globalItems)}</textarea>
         <div class="section-label">Domain-specific additions (editable):</div>
-        <textarea class="editable" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${Array.isArray(initial) ? initial.join('\n') : ''}</textarea>
+        <textarea class="editable" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">${listText(initial)}</textarea>
     `;
         const bodySecret = `
         <div class="row">
             <input id="sec" type="password" placeholder="sk-..." autocomplete="off" />
             <button id="toggle" title="Show/Hide">👁</button>
         </div>`;
-        const bodyInfo = `<textarea class="readonly" readonly spellcheck="false" style="height:auto;min-height:60px;max-height:300px;">${
-        Array.isArray(initial) ? initial.join('\n') : String(initial)
-    }</textarea>`;
+        const bodyInfo = `<textarea class="readonly" readonly spellcheck="false" style="height:auto;min-height:60px;max-height:300px;">${listText(initial)}</textarea>`;
 
         let bodyContent, actionsContent;
         if (mode === 'info') {
@@ -1034,34 +1209,29 @@
             actionsContent = '<button class="save">Save</button><button class="cancel">Cancel</button>';
         }
 
-        setHTML(wrap, `
-        <div class="modal" role="dialog" aria-modal="true" aria-label="${title}">
-            <h3>${title}</h3>
+        const { shadow, close } = createDialog({
+            css,
+            onClose,
+            bodyHTML: `
+        <div class="modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+            <h3>${escapeHtml(title)}</h3>
             ${bodyContent}
             <div class="actions">
                 ${actionsContent}
             </div>
-            <p class="hint">${hint}</p>
-        </div>`);
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
-        const close = () => host.remove();
+            <p class="hint">${escapeHtml(hint)}</p>
+        </div>`
+        });
 
         if (mode === 'info') {
-            const btnClose = shadow.querySelector('.cancel');
-            btnClose.addEventListener('click', close);
-            wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+            shadow.querySelector('.cancel').addEventListener('click', close);
             shadow.addEventListener('keydown', e => {
-                if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); close(); }
+                if (e.key === 'Enter') { e.preventDefault(); close(); }
             });
-            wrap.setAttribute('tabindex', '-1');
-            wrap.focus();
         } else if (mode === 'secret') {
             const inp = shadow.querySelector('#sec');
             const btnSave = shadow.querySelector('.save');
-            const btnCancel = shadow.querySelector('.cancel');
             const btnToggle = shadow.querySelector('#toggle');
-            const btnTest = shadow.querySelector('.test');
             if (typeof initial === 'string' && initial) inp.value = initial;
             btnToggle.addEventListener('click', () => { inp.type = (inp.type === 'password') ? 'text' : 'password'; inp.focus(); });
             btnSave.addEventListener('click', async () => {
@@ -1073,29 +1243,20 @@
                 btnSave.style.borderColor = '#34a853';
                 setTimeout(close, 1000);
             });
-            btnCancel.addEventListener('click', close);
-            btnTest?.addEventListener('click', async () => { await onValidate?.(inp.value.trim()); });
-            wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-            shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); } });
+            shadow.querySelector('.cancel').addEventListener('click', close);
+            shadow.querySelector('.test')?.addEventListener('click', async () => { await onValidate?.(inp.value.trim()); });
+            shadow.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); }
+            });
             inp.focus();
-        } else if (mode === 'domain') {
-            const ta = shadow.querySelector('textarea.editable');
-            const btnSave = shadow.querySelector('.save');
-            const btnCancel = shadow.querySelector('.cancel');
-            btnSave.addEventListener('click', async () => { const lines = parseLines(ta.value); await onSave?.(lines); close(); });
-            btnCancel.addEventListener('click', close);
-            wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-            shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); } });
-            ta.focus();
-            ta.selectionStart = ta.selectionEnd = ta.value.length;
         } else {
-            const ta = shadow.querySelector('textarea');
+            const ta = shadow.querySelector(mode === 'domain' ? 'textarea.editable' : 'textarea');
             const btnSave = shadow.querySelector('.save');
-            const btnCancel = shadow.querySelector('.cancel');
             btnSave.addEventListener('click', async () => { const lines = parseLines(ta.value); await onSave?.(lines); close(); });
-            btnCancel.addEventListener('click', close);
-            wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-            shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); } });
+            shadow.querySelector('.cancel').addEventListener('click', close);
+            shadow.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); btnSave.click(); }
+            });
             ta.focus();
             ta.selectionStart = ta.selectionEnd = ta.value.length;
         }
@@ -1109,7 +1270,22 @@
     }
 
     /**
-     * Show API key dialog
+     * Open the API key editor with the currently stored key (menu entry point)
+     */
+    async function openApiKeyEditor(storage) {
+        const current = await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
+        openEditor({
+            title: 'OpenAI API key',
+            mode: 'secret',
+            initial: current,
+            hint: KEY_HINT,
+            onSave: async (val) => { await storage.set(STORAGE_KEYS.OPENAI_KEY, val); },
+            onValidate: makeKeyValidator(storage)
+        });
+    }
+
+    /**
+     * Show API key dialog (missing/invalid key flow; deduplicated per page)
      */
     function openKeyDialog(storage, extra, apiKeyDialogShown) {
         if (apiKeyDialogShown.value) {
@@ -1121,21 +1297,12 @@
             title: extra || 'OpenAI API key',
             mode: 'secret',
             initial: '',
-            hint: 'Stored locally (GM → localStorage → memory). Validate sends GET /v1/models.',
-            onSave: async (val) => {
-                await storage.set(STORAGE_KEYS.OPENAI_KEY, val);
-                apiKeyDialogShown.value = false;
-            },
-            onValidate: async (val) => {
-                const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-                if (!key) { openInfo('No key to test'); return; }
-                try {
-                    await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` });
-                    openInfo('Validation OK (HTTP 200)');
-                } catch (e) {
-                    openInfo(`Validation failed: ${e.message || e}`);
-                }
-            }
+            hint: KEY_HINT,
+            // Reset on every close path (save, cancel, Escape, backdrop) so the
+            // dialog can reappear if the key is still missing later.
+            onClose: () => { apiKeyDialogShown.value = false; },
+            onSave: async (val) => { await storage.set(STORAGE_KEYS.OPENAI_KEY, val); },
+            onValidate: makeKeyValidator(storage)
         });
     }
 
@@ -1143,11 +1310,7 @@
      * Show welcome dialog (first install)
      */
     function openWelcomeDialog(storage) {
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.55);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:580px;width:94%;border-radius:12px;
@@ -1168,10 +1331,19 @@
         .btn.secondary{background:#e8eaed;color:#1a1a1a}
         .btn.secondary:hover{background:#dadce0}
     `;
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
 
-        setHTML(wrap, `
+        let continued = false;
+
+        const { shadow, close } = createDialog({
+            css,
+            // Cancel semantics apply to every close path (button, Escape,
+            // backdrop) except the explicit "Set Up API Key" continuation.
+            onClose: async () => {
+                if (continued) return;
+                await storage.set(STORAGE_KEYS.FIRST_INSTALL, 'true');
+                openInfo('You can set up your API key anytime via the userscript menu:\n"Set / Validate OpenAI API key"');
+            },
+            bodyHTML: `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Welcome">
             <h2>Welcome to Summarize The Web!</h2>
             <p>This userscript helps you summarize and simplify web articles using AI.</p>
@@ -1190,16 +1362,12 @@
                 <button class="btn secondary cancel">Maybe Later</button>
                 <button class="btn primary continue">Set Up API Key</button>
             </div>
-        </div>`);
+        </div>`
+        });
 
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
-
-        const btnContinue = shadow.querySelector('.continue');
-        const btnCancel = shadow.querySelector('.cancel');
-
-        btnContinue.addEventListener('click', async () => {
-            host.remove();
+        shadow.querySelector('.continue').addEventListener('click', () => {
+            continued = true;
+            close();
             openEditor({
                 title: 'OpenAI API key',
                 mode: 'secret',
@@ -1211,40 +1379,21 @@
                     await storage.set(STORAGE_KEYS.FIRST_INSTALL, 'true');
                     openInfo('API key saved! The script will now work on all websites. Reload any page to see it in action.');
                 },
-                onValidate: async (val) => {
-                    const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-                    if (!key) { openInfo('Please enter your API key first'); return; }
-                    try {
-                        await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` });
-                        openInfo('Validation OK! Click Save to continue.');
-                    } catch (e) {
-                        openInfo(`Validation failed: ${e.message || e}`);
-                    }
-                }
+                onValidate: makeKeyValidator(storage, {
+                    success: 'Validation OK! Click Save to continue.',
+                    empty: 'Please enter your API key first'
+                })
             });
         });
 
-        btnCancel.addEventListener('click', async () => {
-            host.remove();
-            await storage.set(STORAGE_KEYS.FIRST_INSTALL, 'true');
-            openInfo('You can set up your API key anytime via the userscript menu:\n"Set / Validate OpenAI API key"');
-        });
-
-        wrap.addEventListener('click', (e) => { if (e.target === wrap) btnCancel.click(); });
-        shadow.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); btnCancel.click(); } });
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+        shadow.querySelector('.cancel').addEventListener('click', close);
     }
 
     /**
      * Show simplification style dialog
      */
     function openSimplificationStyleDialog(storage, currentLevel, setSimplification) {
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:520px;width:90%;border-radius:12px;
@@ -1272,9 +1421,6 @@
             'Aggressive': 'Maximum simplification - more creative rephrasing for easier reading'
         };
 
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-
         const optionsHtml = SIMPLIFICATION_LEVELS.map(level => `
         <div class="option ${level === currentLevel ? 'selected' : ''}" data-level="${level}">
             <div class="option-title">${level}</div>
@@ -1282,7 +1428,9 @@
         </div>
     `).join('');
 
-        setHTML(wrap, `
+        const { shadow, close } = createDialog({
+            css,
+            bodyHTML: `
         <div class="modal">
             <h3>Simplification Style</h3>
             <p class="subtitle">Controls how the AI simplifies language. Large/Small buttons control the target length.</p>
@@ -1291,10 +1439,8 @@
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Clear Cache</button>
             </div>
-        </div>
-    `);
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
+        </div>`
+        });
 
         let selectedLevel = currentLevel;
 
@@ -1308,10 +1454,6 @@
         });
 
         const btnSave = shadow.querySelector('.btn-save');
-        const btnCancel = shadow.querySelector('.btn-cancel');
-
-        const close = () => host.remove();
-
         btnSave.addEventListener('click', async () => {
             if (!SIMPLIFICATION_LEVELS.includes(selectedLevel)) return;
             await setSimplification(selectedLevel);
@@ -1320,23 +1462,14 @@
             setTimeout(close, 800);
         });
 
-        btnCancel.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+        shadow.querySelector('.btn-cancel').addEventListener('click', close);
     }
 
     /**
      * Show model selection dialog
      */
     function openModelSelectionDialog(storage, currentModel, onSelect) {
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:600px;width:90%;border-radius:12px;
@@ -1363,9 +1496,6 @@
         .btn-cancel:hover{background:#d0d0d0}
     `;
 
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-
         const optionsHtml = Object.keys(MODEL_OPTIONS).map(modelId => {
             const model = MODEL_OPTIONS[modelId];
             const isSelected = modelId === currentModel;
@@ -1382,7 +1512,9 @@
         `;
         }).join('');
 
-        setHTML(wrap, `
+        const { shadow, close } = createDialog({
+            css,
+            bodyHTML: `
         <div class="modal">
             <h3>AI Model Selection</h3>
             <p class="subtitle">Choose the OpenAI model for summarization. Higher-tier models provide better quality but cost more.</p>
@@ -1391,10 +1523,8 @@
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Reload</button>
             </div>
-        </div>
-    `);
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
+        </div>`
+        });
 
         let selectedModel = currentModel;
 
@@ -1408,10 +1538,6 @@
         });
 
         const btnSave = shadow.querySelector('.btn-save');
-        const btnCancel = shadow.querySelector('.btn-cancel');
-
-        const close = () => host.remove();
-
         btnSave.addEventListener('click', async () => {
             if (!MODEL_OPTIONS[selectedModel]) return;
             await onSelect(selectedModel);
@@ -1420,23 +1546,14 @@
             setTimeout(() => location.reload(), 800);
         });
 
-        btnCancel.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+        shadow.querySelector('.btn-cancel').addEventListener('click', close);
     }
 
     /**
      * Show custom prompts dialog
      */
     function openCustomPromptDialog(storage, currentPrompts, onSave) {
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center;overflow-y:auto}
         .modal{background:#fff;max-width:700px;width:94%;border-radius:12px;
@@ -1463,19 +1580,19 @@
         .hint{margin:6px 0 0;color:#999;font:11px/1.3 system-ui,sans-serif}
     `;
 
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-        setHTML(wrap, `
+        const { shadow, close } = createDialog({
+            css,
+            bodyHTML: `
         <div class="modal">
             <h3>Custom Summary Prompts</h3>
             <div class="section">
                 <div class="section-label">Large Summary (50%)</div>
-                <textarea id="summary-large-prompt">${currentPrompts.summary_large || DEFAULT_PROMPTS.summary_large}</textarea>
+                <textarea id="summary-large-prompt">${escapeHtml(currentPrompts.summary_large || DEFAULT_PROMPTS.summary_large)}</textarea>
                 <p class="hint">Summarizes content to approximately 50% of original length</p>
             </div>
             <div class="section">
                 <div class="section-label">Small Summary (20%)</div>
-                <textarea id="summary-small-prompt">${currentPrompts.summary_small || DEFAULT_PROMPTS.summary_small}</textarea>
+                <textarea id="summary-small-prompt">${escapeHtml(currentPrompts.summary_small || DEFAULT_PROMPTS.summary_small)}</textarea>
                 <p class="hint">Creates a concise summary at approximately 20% of original length</p>
             </div>
             <div class="actions">
@@ -1483,18 +1600,13 @@
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Clear Cache</button>
             </div>
-        </div>
-    `);
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
+        </div>`
+        });
 
         const summaryLarge = shadow.querySelector('#summary-large-prompt');
         const summarySmall = shadow.querySelector('#summary-small-prompt');
         const btnSave = shadow.querySelector('.btn-save');
         const btnReset = shadow.querySelector('.btn-reset');
-        const btnCancel = shadow.querySelector('.btn-cancel');
-
-        const close = () => host.remove();
 
         btnSave.addEventListener('click', async () => {
             const prompts = {
@@ -1507,30 +1619,21 @@
             setTimeout(close, 1000);
         });
 
-        btnReset.addEventListener('click', async () => {
+        btnReset.addEventListener('click', () => {
             summaryLarge.value = DEFAULT_PROMPTS.summary_large;
             summarySmall.value = DEFAULT_PROMPTS.summary_small;
             btnReset.textContent = 'Reset!';
             setTimeout(() => { btnReset.textContent = 'Reset to Default'; }, 1000);
         });
 
-        btnCancel.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+        shadow.querySelector('.btn-cancel').addEventListener('click', close);
     }
 
     /**
      * Show usage statistics dialog
      */
     function showStats(cacheSize) {
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);
              display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:600px;width:92%;border-radius:12px;
@@ -1562,9 +1665,9 @@
         const totalCalls = API_TOKENS.digest.calls;
         const estimatedCost = calculateApiCost();
 
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-        setHTML(wrap, `
+        const { shadow, close } = createDialog({
+            css,
+            bodyHTML: `
         <div class="modal">
             <h3>Usage Statistics</h3>
 
@@ -1624,30 +1727,17 @@
             <div class="actions">
                 <button class="btn btn-close">Close</button>
             </div>
-        </div>
-    `);
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
+        </div>`
+        });
 
-        const close = () => host.remove();
-        const btnClose = shadow.querySelector('.btn-close');
-        btnClose.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
-
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+        shadow.querySelector('.btn-close').addEventListener('click', close);
     }
 
     /**
      * Show domain list editor dialog
      */
     function openDomainEditor(storage, mode, DOMAIN_ALLOW, DOMAIN_DENY) {
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
               display:flex;align-items:center;justify-content:center}
         .modal{background:#fff;max-width:600px;width:90%;border-radius:12px;
@@ -1673,29 +1763,23 @@
             ? 'In ALLOW mode, the script only runs on these domains. One pattern per line. Supports wildcards (*.example.com) and regex (/pattern/).'
             : 'In DENY mode, the script is disabled on these domains. One pattern per line. Supports wildcards (*.example.com) and regex (/pattern/).';
 
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-        setHTML(wrap, `
+        const { shadow, close } = createDialog({
+            css,
+            bodyHTML: `
         <div class="modal">
-            <h3>${title}</h3>
-            <textarea>${list.join('\n')}</textarea>
-            <p class="hint">${hint}</p>
+            <h3>${escapeHtml(title)}</h3>
+            <textarea>${escapeHtml(list.join('\n'))}</textarea>
+            <p class="hint">${escapeHtml(hint)}</p>
             <div class="actions">
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save & Reload</button>
             </div>
-        </div>
-    `);
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
+        </div>`
+        });
 
         const textarea = shadow.querySelector('textarea');
-        const btnSave = shadow.querySelector('.btn-save');
-        const btnCancel = shadow.querySelector('.btn-cancel');
 
-        const close = () => host.remove();
-
-        btnSave.addEventListener('click', async () => {
+        shadow.querySelector('.btn-save').addEventListener('click', async () => {
             const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
             if (mode === 'allow') {
                 await storage.set(STORAGE_KEYS.DOMAINS_ALLOW, JSON.stringify(lines));
@@ -1705,23 +1789,14 @@
             location.reload();
         });
 
-        btnCancel.addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+        shadow.querySelector('.btn-cancel').addEventListener('click', close);
     }
 
     /**
      * Show unified selector editor dialog (global + domain-specific, tabbed)
      */
     function openSelectorEditor({ host, selectorsGlobal, excludeGlobal, selectorsDomain, excludeDomain, defaultSelectors, defaultExcludes, onSave }) {
-        const hostEl = document.createElement('div');
-        hostEl.setAttribute(UI_ATTR, '');
-        const shadow = hostEl.attachShadow({ mode: 'open' });
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.4);
               display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0}
         .modal{background:linear-gradient(135deg,#f8f9ff 0%,#fff5f7 100%);max-width:700px;width:96%;
@@ -1779,13 +1854,13 @@
         const domExSelf = (excludeDomain.self || []).join('\n');
         const domExAnc = (excludeDomain.ancestors || []).join('\n');
 
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-        setHTML(wrap, `
+        const { shadow, close } = createDialog({
+            css,
+            bodyHTML: `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Edit Selectors">
             <div class="header">
                 <span class="header-title">Edit Selectors</span>
-                <button class="header-close" aria-label="Close">\u00d7</button>
+                <button class="header-close" aria-label="Close">×</button>
             </div>
             <div class="content">
                 <div class="tabs">
@@ -1840,10 +1915,8 @@
                 <button class="btn btn-cancel">Cancel</button>
                 <button class="btn btn-save">Save &amp; Reload</button>
             </div>
-        </div>
-    `);
-        shadow.append(style, wrap);
-        document.body.appendChild(hostEl);
+        </div>`
+        });
 
         let activeTab = 'global';
 
@@ -1858,13 +1931,10 @@
             });
         });
 
-        const close = () => hostEl.remove();
-
         const toLines = (val) => val.split('\n').map(l => l.trim()).filter(Boolean);
 
         const btnSave = shadow.querySelector('.btn-save');
         const btnReset = shadow.querySelector('.btn-reset');
-        const btnCancel = shadow.querySelector('.btn-cancel');
 
         btnSave.addEventListener('click', async () => {
             const data = {
@@ -1880,7 +1950,7 @@
                 }
             };
             await onSave(data);
-            btnSave.textContent = '\u2713 Saved!';
+            btnSave.textContent = '✓ Saved!';
             setTimeout(() => location.reload(), 800);
         });
 
@@ -1898,17 +1968,236 @@
             setTimeout(() => { btnReset.textContent = 'Reset Defaults'; }, 1000);
         });
 
-        btnCancel.addEventListener('click', close);
+        shadow.querySelector('.btn-cancel').addEventListener('click', close);
         shadow.querySelector('.header-close').addEventListener('click', close);
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    }
 
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+    /**
+     * Article extraction logic for Summarize The Web
+     */
+
+
+    /**
+     * Get selected text from the page
+     * @param {number} minLength - Minimum text length required
+     * @returns {Object|null} - { text } or { error, actualLength } or null if no selection
+     */
+    function getSelectedText(minLength = 100) {
+        const selection = window.getSelection();
+        const text = selection.toString().trim();
+        if (!text) {
+            return null;
+        }
+        if (text.length < minLength) {
+            return { error: 'selection_too_short', actualLength: text.length, minLength };
+        }
+        return { text };
+    }
+
+    /**
+     * Clean container text by removing UI and excluded elements
+     * @param {Element} container - Container element
+     * @param {Object} EXCLUDE - Exclusion rules
+     * @returns {string} - Cleaned text
+     */
+    function cleanContainerText(container, EXCLUDE) {
+        const clone = container.cloneNode(true);
+
+        // Remove UI elements
+        clone.querySelectorAll(`[${UI_ATTR}]`).forEach(el => el.remove());
+
+        // Remove excluded elements (self)
+        if (EXCLUDE.self) {
+            for (const sel of EXCLUDE.self) {
+                try {
+                    clone.querySelectorAll(sel).forEach(el => el.remove());
+                } catch {}
+            }
+        }
+
+        // Remove excluded containers (ancestors)
+        if (EXCLUDE.ancestors) {
+            for (const sel of EXCLUDE.ancestors) {
+                try {
+                    clone.querySelectorAll(sel).forEach(el => el.remove());
+                } catch {}
+            }
+        }
+
+        return (clone.innerText ?? clone.textContent ?? '').trim();
+    }
+
+    /**
+     * Find and rank article container candidates. Shared by extraction and the
+     * summary-highlight inspection view so the dominance heuristic lives in one
+     * place.
+     * @param {string[]} SELECTORS - CSS selectors to find containers
+     * @param {number} minLength - Minimum text length for a significant container
+     * @returns {Object|null} - { selected, candidates } where selected holds one
+     *   entry (single container) or several (non-nested containers to combine),
+     *   or null when no selector matched anything.
+     */
+    function selectContainers(SELECTORS, minLength = 100) {
+        // Get total page text for comparison
+        const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
+        const bodyLength = bodyText.length || 1; // Avoid division by zero
+
+        // Collect all matching candidates with their text stats
+        const candidates = [];
+        for (const selector of SELECTORS) {
+            try {
+                const candidate = document.querySelector(selector);
+                if (!candidate) continue;
+
+                const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
+                const percent = Math.round((rawText.length / bodyLength) * 100);
+
+                candidates.push({ candidate, selector, length: rawText.length, percent });
+            } catch (e) {
+                // Invalid selector, skip
+            }
+        }
+
+        if (candidates.length === 0) return null;
+
+        // Sort by text length descending
+        candidates.sort((a, b) => b.length - a.length);
+        const best = candidates[0];
+
+        // Check if one container is dominant (>70% of page, and next best is <50% of best)
+        const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
+        if (dominated) {
+            return { selected: [best], candidates };
+        }
+
+        // Multiple significant containers - combine non-nested ones
+        const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
+        const nonNested = significant.filter((c, i) =>
+            !significant.some((other, j) => i !== j &&
+                (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
+            )
+        );
+
+        return { selected: nonNested.length > 1 ? nonNested : [best], candidates };
+    }
+
+    /**
+     * Extract article body using configured selectors
+     * @param {string[]} SELECTORS - CSS selectors to find container
+     * @param {Object} EXCLUDE - Exclusion rules
+     * @param {number} minLength - Minimum text length required
+     * @returns {Object|null} - { text, container, title } or { error, ... } or null
+     */
+    function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
+        const selection = selectContainers(SELECTORS, minLength);
+        if (!selection) {
+            log('No article container found');
+            return { error: 'no_container' };
+        }
+        const { selected, candidates } = selection;
+
+        // Log top candidates for debugging
+        const topCandidates = candidates.slice(0, 5).filter(c => c.length > 0);
+        if (topCandidates.length > 1) {
+            log('Container candidates:', topCandidates.map(c => `${c.selector} (${c.percent}%)`).join(', '));
+        }
+
+        if (selected.length > 1) {
+            // Combine cleaned text from multiple containers
+            const combinedText = selected.map(c => cleanContainerText(c.candidate, EXCLUDE)).join('\n\n');
+            log('Combined', selected.length, 'containers:', selected.map(c => c.selector).join(', '));
+
+            if (combinedText.length < minLength) {
+                log(`Combined text too short: ${combinedText.length} < ${minLength}`);
+                return { error: 'article_too_short', actualLength: combinedText.length, minLength };
+            }
+
+            log(`Extracted ${combinedText.length} characters from combined containers`);
+            return { text: combinedText, elements: null, container: selected[0].candidate, title: null };
+        }
+
+        const best = selected[0];
+        const container = best.candidate;
+        log('Selected container:', best.selector, 'with', best.length, 'chars', `(${best.percent}% of page)`);
+
+        // Try to find article title
+        let title = null;
+        const titleSelectors = [
+            '[itemprop="headline"]',
+            'h1',
+            'h2',
+            '.article-title',
+            '.post-title',
+            '.entry-title',
+            '[class*="article-title"]',
+            '[class*="post-title"]'
+        ];
+
+        for (const selector of titleSelectors) {
+            const el = container.querySelector(selector);
+            if (el && el.textContent.trim().length > 10 && el.textContent.trim().length < 300) {
+                title = el;
+                break;
+            }
+        }
+
+        // Get cleaned text from container
+        const text = cleanContainerText(container, EXCLUDE);
+
+        if (!text) {
+            log('No text found in container');
+            return { error: 'no_text' };
+        }
+
+        if (text.length < minLength) {
+            log(`Text too short: ${text.length} < ${minLength}`);
+            return { error: 'article_too_short', actualLength: text.length, minLength };
+        }
+
+        log(`Extracted ${text.length} characters from container`);
+
+        return {
+            text: text,
+            elements: null,
+            container: container,
+            title: title
+        };
+    }
+
+    /**
+     * Get text to digest (selection or article body)
+     * @param {string[]} SELECTORS - CSS selectors to find container
+     * @param {Object} EXCLUDE - Exclusion rules
+     * @param {number} minLength - Minimum text length required
+     * @returns {Object} - { text, source, ... } or { error, ... }
+     */
+    function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100) {
+        // First check if user has selected text
+        const selected = getSelectedText(minLength);
+        if (selected) {
+            if (selected.error) {
+                return { error: selected.error, actualLength: selected.actualLength, minLength, source: 'selection' };
+            }
+            return { text: selected.text, elements: null, source: 'selection' };
+        }
+
+        // Otherwise extract article body
+        const article = extractArticleBody(SELECTORS, EXCLUDE, minLength);
+        if (article.error) {
+            return { error: article.error, actualLength: article.actualLength, minLength, source: 'article' };
+        }
+
+        return { text: article.text, elements: article.elements, source: 'article', container: article.container };
     }
 
     /**
      * Inspection mode functionality for debugging article container detection
+     *
+     * Functions here take an inspection context object (ctx) holding the merged
+     * selector configuration for the current page:
+     *   { SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN,
+     *     EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE,
+     *     storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo }
      */
 
 
@@ -1952,8 +2241,9 @@
 
     /**
      * Enter inspection mode
+     * @param {Object} ctx - Inspection context (see module doc comment)
      */
-    function enterInspectionMode(SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo) {
+    function enterInspectionMode(ctx) {
         if (inspectionOverlay) return;
 
         const overlay = document.createElement('div');
@@ -1985,7 +2275,7 @@
 
         let currentHighlight = null;
         const onMouseMove = (e) => {
-            const target = findMostSpecificElement(e.clientX, e.clientY, SELECTORS);
+            const target = findMostSpecificElement(e.clientX, e.clientY, ctx.SELECTORS);
             if (!target) return;
 
             if (currentHighlight && currentHighlight !== target) {
@@ -2005,7 +2295,7 @@
         };
 
         const onClick = (e) => {
-            const target = findMostSpecificElement(e.clientX, e.clientY, SELECTORS);
+            const target = findMostSpecificElement(e.clientX, e.clientY, ctx.SELECTORS);
             if (!target) return;
 
             e.preventDefault();
@@ -2026,7 +2316,7 @@
             inspectedElement.style.outlineOffset = '2px';
 
             exitInspectionMode();
-            showDiagnosticDialog(inspectedElement, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo);
+            showDiagnosticDialog(inspectedElement, ctx);
         };
 
         const onKeyDown = (e) => {
@@ -2092,7 +2382,9 @@
     /**
      * Diagnose element for article container detection
      */
-    function diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE) {
+    function diagnoseElement(el, ctx) {
+        const { SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE } = ctx;
+
         const text = textTrim(el);
         const selector = generateCSSSelector(el);
 
@@ -2101,18 +2393,7 @@
         const globalExclusions = findMatchingExclusions(el, EXCLUDE_GLOBAL);
         const domainExclusions = findMatchingExclusions(el, EXCLUDE_DOMAIN);
 
-        // Check if element is excluded
-        let isExcluded = false;
-        if (EXCLUDE.self) {
-            for (const sel of EXCLUDE.self) {
-                try { if (el.matches(sel)) { isExcluded = true; break; } } catch {}
-            }
-        }
-        if (!isExcluded && EXCLUDE.ancestors) {
-            for (const sel of EXCLUDE.ancestors) {
-                try { if (el.closest(sel)) { isExcluded = true; break; } } catch {}
-            }
-        }
+        const isExcluded = isExcludedElement(el, EXCLUDE);
 
         const isMatched = globalSelectors.length > 0 || domainSelectors.length > 0;
         const isProcessed = isMatched && !isExcluded;
@@ -2143,7 +2424,7 @@
             isMatched,
             isProcessed,
             textElementCount: filteredTextElements.length,
-            // New fields for "included via container"
+            // Fields for "included via container"
             isInsideContainer,
             ancestorMatch,
             isIncludedInSummary
@@ -2153,15 +2434,10 @@
     /**
      * Show diagnostic dialog
      */
-    function showDiagnosticDialog(el, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo) {
-        const diag = diagnoseElement(el, SELECTORS_GLOBAL, SELECTORS_DOMAIN, EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE);
+    function showDiagnosticDialog(el, ctx) {
+        const diag = diagnoseElement(el, ctx);
 
-        const host = document.createElement('div');
-        host.setAttribute(UI_ATTR, '');
-        const shadow = host.attachShadow({ mode: 'open' });
-
-        const style = document.createElement('style');
-        style.textContent = `
+        const css = `
         .wrap { position: fixed; inset: 0; z-index: 2147483647; background: rgba(0,0,0,.4);
                 display: flex; align-items: center; justify-content: center; }
         .modal { background: linear-gradient(135deg, #f8f9ff 0%, #fff5f7 100%); max-width: 700px; width: 96%;
@@ -2217,9 +2493,6 @@
         .btn.small { padding: 6px 12px; font-size: 12px; }
     `;
 
-        const wrap = document.createElement('div');
-        wrap.className = 'wrap';
-
         let statusClass, statusText;
         if (diag.isExcluded) {
             statusClass = 'excluded';
@@ -2266,7 +2539,20 @@
         </ul>` :
             '<p class="info-row no-match">No domain exclusions configured or affect this element.</p>';
 
-        setHTML(wrap, `
+        const restoreInspectedOutline = () => {
+            if (inspectedElement) {
+                inspectedElement.style.outline = inspectedElement._origOutline || '';
+                inspectedElement.style.outlineOffset = inspectedElement._origOutlineOffset || '';
+                delete inspectedElement._origOutline;
+                delete inspectedElement._origOutlineOffset;
+                inspectedElement = null;
+            }
+        };
+
+        const { shadow, close } = createDialog({
+            css,
+            onClose: restoreInspectedOutline,
+            bodyHTML: `
         <div class="modal" role="dialog" aria-modal="true" aria-label="Element Inspection">
             <div class="header">
                 <div class="header-title">Element Inspection</div>
@@ -2279,8 +2565,8 @@
                 <div class="section">
                     <div class="section-title">Element Information</div>
                     <div class="info-row"><span class="info-label">Tag:</span> &lt;${diag.tag}&gt;</div>
-                    <div class="info-row"><span class="info-label">ID:</span> ${diag.id || '(none)'}</div>
-                    <div class="info-row"><span class="info-label">Classes:</span> ${diag.classes || '(none)'}</div>
+                    <div class="info-row"><span class="info-label">ID:</span> ${escapeHtml(diag.id) || '(none)'}</div>
+                    <div class="info-row"><span class="info-label">Classes:</span> ${escapeHtml(diag.classes) || '(none)'}</div>
                     <div class="info-row"><span class="info-label">Text length:</span> ${diag.fullTextLength} characters</div>
                     <div class="info-row"><span class="info-label">Text elements (p, li, etc.):</span> ${diag.textElementCount} with 40+ chars</div>
                     <div class="info-row"><span class="info-label">CSS Selector:</span> <span class="code">${escapeHtml(diag.selector)}</span></div>
@@ -2295,7 +2581,7 @@
                 </div>
 
                 <div class="section">
-                    <div class="section-title">Domain Container Selectors (${HOST})</div>
+                    <div class="section-title">Domain Container Selectors (${escapeHtml(ctx.HOST)})</div>
                     ${domainSelectorsHTML}
                 </div>
 
@@ -2305,7 +2591,7 @@
                 </div>
 
                 <div class="section">
-                    <div class="section-title">Domain Exclusions (${HOST})</div>
+                    <div class="section-title">Domain Exclusions (${escapeHtml(ctx.HOST)})</div>
                     ${domainExclusionsHTML}
                 </div>
             </div>
@@ -2319,26 +2605,10 @@
                     <button class="btn primary close">Close</button>
                 </div>
             </div>
-        </div>
-    `);
-
-        shadow.append(style, wrap);
-        document.body.appendChild(host);
-
-        const close = () => {
-            if (inspectedElement) {
-                inspectedElement.style.outline = inspectedElement._origOutline || '';
-                inspectedElement.style.outlineOffset = inspectedElement._origOutlineOffset || '';
-                delete inspectedElement._origOutline;
-                delete inspectedElement._origOutlineOffset;
-                inspectedElement = null;
-            }
-            host.remove();
-        };
+        </div>`
+        });
 
         shadow.querySelectorAll('.close').forEach(btn => btn.addEventListener('click', close));
-        wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-        shadow.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
 
         shadow.querySelector('.copy-selector').addEventListener('click', () => {
             navigator.clipboard.writeText(diag.selector).then(() => {
@@ -2349,16 +2619,13 @@
             });
         });
 
-        attachActionHandlers(shadow, diag, close, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, HOST, SELECTORS_GLOBAL, EXCLUDE_GLOBAL, openInfo);
-
-        wrap.setAttribute('tabindex', '-1');
-        wrap.focus();
+        attachActionHandlers(shadow, diag, close, ctx);
     }
 
     /**
      * Build action buttons for diagnostic dialog
      */
-    function buildActionButtons(diag, HOST) {
+    function buildActionButtons(diag) {
         const buttons = [];
 
         // Global Inclusions: Remove if matched, Add if not
@@ -2411,7 +2678,9 @@
     /**
      * Attach action handlers for diagnostic dialog
      */
-    function attachActionHandlers(shadow, diag, closeDialog, storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, HOST, SELECTORS_GLOBAL, EXCLUDE_GLOBAL, openInfo) {
+    function attachActionHandlers(shadow, diag, closeDialog, ctx) {
+        const { storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, HOST, SELECTORS_GLOBAL, EXCLUDE_GLOBAL, openInfo } = ctx;
+
         // Remove global inclusions
         shadow.querySelectorAll('.remove-global-sel').forEach(btn => {
             btn.addEventListener('click', async () => {
@@ -2529,23 +2798,6 @@
     }
 
     /**
-     * Check if element is excluded
-     */
-    function isElementExcluded(el, EXCLUDE) {
-        if (EXCLUDE.self) {
-            for (const sel of EXCLUDE.self) {
-                try { if (el.matches(sel)) return true; } catch {}
-            }
-        }
-        if (EXCLUDE.ancestors) {
-            for (const sel of EXCLUDE.ancestors) {
-                try { if (el.closest(sel)) return true; } catch {}
-            }
-        }
-        return false;
-    }
-
-    /**
      * Show which elements would be included in summary
      */
     function showSummaryHighlight(SELECTORS, EXCLUDE, minLength = 100) {
@@ -2557,66 +2809,24 @@
         summaryHighlightActive = true;
         highlightedElements = [];
 
-        // Get total page text for comparison
-        const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
-        const bodyLength = bodyText.length || 1;
-
-        // Collect all matching candidates with their text stats
-        const candidates = [];
-        for (const selector of SELECTORS) {
-            try {
-                const candidate = document.querySelector(selector);
-                if (!candidate) continue;
-
-                const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
-                const percent = Math.round((rawText.length / bodyLength) * 100);
-
-                candidates.push({ candidate, selector, text: rawText, length: rawText.length, percent });
-            } catch (e) {
-                // Invalid selector, skip
-            }
-        }
-
-        if (candidates.length === 0) {
+        const selection = selectContainers(SELECTORS, minLength);
+        if (!selection) {
             showHighlightMessage('No article container found matching configured selectors.', false);
             return;
         }
-
-        // Sort by text length descending
-        candidates.sort((a, b) => b.length - a.length);
-
-        const best = candidates[0];
-
-        // Check if one container is dominant
-        const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
-
-        let selectedContainers = [];
-
-        if (dominated) {
-            selectedContainers = [best];
-        } else {
-            // Multiple significant containers - combine non-nested ones
-            const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
-
-            // Filter out nested containers
-            const nonNested = significant.filter((c, i) =>
-                !significant.some((other, j) => i !== j &&
-                    (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
-                )
-            );
-
-            if (nonNested.length > 1) {
-                selectedContainers = nonNested;
-            } else {
-                selectedContainers = [best];
-            }
-        }
+        const selectedContainers = selection.selected;
 
         // Text element selectors - these are the elements that actually contain readable text
         const textElementSelector = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, figcaption, dd, dt, pre, td, th';
 
         let includedCount = 0;
         let excludedCount = 0;
+
+        // Elements already highlighted, for skipping nested matches. Within a
+        // container, querySelectorAll returns document order, so ancestors are
+        // always visited before their descendants; a parent-chain lookup against
+        // this set replaces the previous O(n²) contains() scan.
+        const highlighted = new Set();
 
         // Find and highlight text elements within containers
         for (const c of selectedContainers) {
@@ -2627,12 +2837,15 @@
                 const text = (el.innerText ?? el.textContent ?? '').trim();
                 if (text.length < 10) continue;
 
-                // Skip if already highlighted (nested elements)
-                if (highlightedElements.some(h => h.element === el || h.element.contains(el) || el.contains(h.element))) {
-                    continue;
+                // Skip if an ancestor is already highlighted (nested elements)
+                let insideHighlighted = false;
+                for (let anc = el.parentElement; anc; anc = anc.parentElement) {
+                    if (highlighted.has(anc)) { insideHighlighted = true; break; }
                 }
+                if (insideHighlighted || highlighted.has(el)) continue;
+                highlighted.add(el);
 
-                const excluded = isElementExcluded(el, EXCLUDE);
+                const excluded = isExcludedElement(el, EXCLUDE);
 
                 highlightedElements.push({
                     element: el,
@@ -2726,218 +2939,6 @@
     }
 
     /**
-     * Article extraction logic for Summarize The Web
-     */
-
-
-    /**
-     * Get selected text from the page
-     * @param {number} minLength - Minimum text length required
-     * @returns {Object|null} - { text } or { error, actualLength } or null if no selection
-     */
-    function getSelectedText(minLength = 100) {
-        const selection = window.getSelection();
-        const text = selection.toString().trim();
-        if (!text) {
-            return null;
-        }
-        if (text.length < minLength) {
-            return { error: 'selection_too_short', actualLength: text.length, minLength };
-        }
-        return { text };
-    }
-
-    /**
-     * Clean container text by removing UI and excluded elements
-     * @param {Element} container - Container element
-     * @param {Object} EXCLUDE - Exclusion rules
-     * @returns {string} - Cleaned text
-     */
-    function cleanContainerText(container, EXCLUDE) {
-        const clone = container.cloneNode(true);
-
-        // Remove UI elements
-        clone.querySelectorAll(`[${UI_ATTR}]`).forEach(el => el.remove());
-
-        // Remove excluded elements (self)
-        if (EXCLUDE.self) {
-            for (const sel of EXCLUDE.self) {
-                try {
-                    clone.querySelectorAll(sel).forEach(el => el.remove());
-                } catch {}
-            }
-        }
-
-        // Remove excluded containers (ancestors)
-        if (EXCLUDE.ancestors) {
-            for (const sel of EXCLUDE.ancestors) {
-                try {
-                    clone.querySelectorAll(sel).forEach(el => el.remove());
-                } catch {}
-            }
-        }
-
-        return (clone.innerText ?? clone.textContent ?? '').trim();
-    }
-
-    /**
-     * Extract article body using configured selectors
-     * @param {string[]} SELECTORS - CSS selectors to find container
-     * @param {Object} EXCLUDE - Exclusion rules
-     * @param {number} minLength - Minimum text length required
-     * @returns {Object|null} - { text, container, title } or { error, ... } or null
-     */
-    function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
-        let container = null;
-
-        // Get total page text for comparison
-        const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
-        const bodyLength = bodyText.length || 1; // Avoid division by zero
-
-        // Collect all matching candidates with their text stats
-        const candidates = [];
-        for (const selector of SELECTORS) {
-            try {
-                const candidate = document.querySelector(selector);
-                if (!candidate) continue;
-
-                const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
-                const percent = Math.round((rawText.length / bodyLength) * 100);
-
-                candidates.push({ candidate, selector, text: rawText, length: rawText.length, percent });
-            } catch (e) {
-                // Invalid selector, skip
-            }
-        }
-
-        if (candidates.length === 0) {
-            log('No article container found');
-            return { error: 'no_container' };
-        }
-
-        // Sort by text length descending
-        candidates.sort((a, b) => b.length - a.length);
-
-        // Log top candidates for debugging
-        const topCandidates = candidates.slice(0, 5).filter(c => c.length > 0);
-        if (topCandidates.length > 1) {
-            log('Container candidates:', topCandidates.map(c => `${c.selector} (${c.percent}%)`).join(', '));
-        }
-
-        const best = candidates[0];
-
-        // Check if one container is dominant (>70% of page, and next best is <50% of best)
-        const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
-
-        if (dominated) {
-            container = best.candidate;
-            log('Selected container:', best.selector, '(dominant, ' + best.percent + '% of page)');
-        } else {
-            // Multiple significant containers - combine non-nested ones
-            const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
-
-            // Filter out nested containers (keep only if not ancestor/descendant of another)
-            const nonNested = significant.filter((c, i) =>
-                !significant.some((other, j) => i !== j &&
-                    (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
-                )
-            );
-
-            if (nonNested.length > 1) {
-                // Combine cleaned text from multiple containers
-                const combinedTexts = nonNested.map(c => cleanContainerText(c.candidate, EXCLUDE));
-                const combinedText = combinedTexts.join('\n\n');
-                log('Combined', nonNested.length, 'containers:', nonNested.map(c => c.selector).join(', '));
-
-                if (combinedText.length < minLength) {
-                    log(`Combined text too short: ${combinedText.length} < ${minLength}`);
-                    return { error: 'article_too_short', actualLength: combinedText.length, minLength };
-                }
-
-                log(`Extracted ${combinedText.length} characters from combined containers`);
-                return { text: combinedText, elements: null, container: nonNested[0].candidate, title: null };
-            }
-
-            container = best.candidate;
-            log('Selected container:', best.selector, 'with', best.length, 'chars', `(${best.percent}% of page)`);
-        }
-
-        if (!container) {
-            log('No article container found');
-            return { error: 'no_container' };
-        }
-
-        // Try to find article title
-        let title = null;
-        const titleSelectors = [
-            '[itemprop="headline"]',
-            'h1',
-            'h2',
-            '.article-title',
-            '.post-title',
-            '.entry-title',
-            '[class*="article-title"]',
-            '[class*="post-title"]'
-        ];
-
-        for (const selector of titleSelectors) {
-            const el = container.querySelector(selector);
-            if (el && el.textContent.trim().length > 10 && el.textContent.trim().length < 300) {
-                title = el;
-                break;
-            }
-        }
-
-        // Get cleaned text from container
-        const text = cleanContainerText(container, EXCLUDE);
-
-        if (!text) {
-            log('No text found in container');
-            return { error: 'no_text' };
-        }
-
-        if (text.length < minLength) {
-            log(`Text too short: ${text.length} < ${minLength}`);
-            return { error: 'article_too_short', actualLength: text.length, minLength };
-        }
-
-        log(`Extracted ${text.length} characters from container`);
-
-        return {
-            text: text,
-            elements: null,
-            container: container,
-            title: title
-        };
-    }
-
-    /**
-     * Get text to digest (selection or article body)
-     * @param {string[]} SELECTORS - CSS selectors to find container
-     * @param {Object} EXCLUDE - Exclusion rules
-     * @param {number} minLength - Minimum text length required
-     * @returns {Object} - { text, source, ... } or { error, ... }
-     */
-    function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100) {
-        // First check if user has selected text
-        const selected = getSelectedText(minLength);
-        if (selected) {
-            if (selected.error) {
-                return { error: selected.error, actualLength: selected.actualLength, minLength, source: 'selection' };
-            }
-            return { text: selected.text, elements: null, source: 'selection' };
-        }
-
-        // Otherwise extract article body
-        const article = extractArticleBody(SELECTORS, EXCLUDE, minLength);
-        if (article.error) {
-            return { error: article.error, actualLength: article.actualLength, minLength, source: 'article' };
-        }
-
-        return { text: article.text, elements: article.elements, source: 'article', container: article.container };
-    }
-
-    /**
      * UI overlay components for Summarize The Web
      */
 
@@ -2960,6 +2961,8 @@
     let storedOnDigest = null;
     let currentOverlayPos = null;
     let resizeHandlerRegistered = false;
+    let documentClickRegistered = false;
+    let summaryEscHandler = null;
 
     const BADGE_WIDTH = 150;
 
@@ -2970,6 +2973,7 @@
         if (!shortcut) return '';
         const parts = [];
         if (shortcut.ctrl) parts.push('Ctrl');
+        if (shortcut.meta) parts.push('Meta');
         if (shortcut.alt) parts.push('Alt');
         if (shortcut.shift) parts.push('Shift');
         parts.push(shortcut.key.toUpperCase());
@@ -2977,14 +2981,28 @@
     }
 
     /**
+     * Derive a layout-independent key name from a keyboard event.
+     * event.key reflects the composed character, so on macOS Alt+Shift+L
+     * produces "Ò" and would never match a stored "L". Prefer event.code
+     * for letters and digits.
+     */
+    function eventKeyName(event) {
+        const code = event.code || '';
+        if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+        if (/^Digit\d$/.test(code)) return code.slice(5);
+        return (event.key || '').toUpperCase();
+    }
+
+    /**
      * Check if a keyboard event matches a shortcut
      */
     function matchesShortcut(event, shortcut) {
         if (!shortcut) return false;
-        return event.key.toUpperCase() === shortcut.key.toUpperCase() &&
+        return eventKeyName(event) === shortcut.key.toUpperCase() &&
                event.altKey === shortcut.alt &&
                event.shiftKey === shortcut.shift &&
-               event.ctrlKey === shortcut.ctrl;
+               event.ctrlKey === shortcut.ctrl &&
+               event.metaKey === !!shortcut.meta;
     }
 
     /**
@@ -2998,7 +3016,8 @@
             key,
             ctrl: parts.includes('CTRL'),
             alt: parts.includes('ALT'),
-            shift: parts.includes('SHIFT')
+            shift: parts.includes('SHIFT'),
+            meta: parts.includes('META') || parts.includes('CMD')
         };
     }
 
@@ -3801,330 +3820,6 @@
         });
     }
 
-    /**
-     * Ensure CSS is loaded
-     */
-    function ensureCSS() {
-        if (document.getElementById('summarizer-style')) return;
-        const style = document.createElement('style');
-        style.id = 'summarizer-style';
-        style.textContent = `
-        .summarizer-summary-overlay {
-            position: fixed !important;
-            top: 12px !important;
-            left: 50% !important;
-            transform: translateX(-50%) !important;
-            z-index: 2147483645 !important;
-            background: linear-gradient(135deg, #f8f9ff 0%, #fff5f7 100%) !important;
-            border: 3px solid #667eea !important;
-            border-radius: 16px !important;
-            width: 96% !important;
-            max-width: 760px !important;
-            max-height: 90vh !important;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35), 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
-            animation: summarizer-summary-fadein 0.3s ease !important;
-        }
-
-        @keyframes summarizer-summary-fadein {
-            from {
-                opacity: 0;
-                transform: translateX(-50%) translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(0);
-            }
-        }
-
-        .summarizer-summary-container {
-            padding: 0 !important;
-            box-sizing: border-box !important;
-        }
-
-        .summarizer-summary-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            padding: 16px 20px !important;
-            border-radius: 13px 13px 0 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-        }
-
-        .summarizer-summary-badge {
-            font: 600 16px/1.2 system-ui, sans-serif !important;
-            color: #fff !important;
-            display: flex !important;
-            align-items: center !important;
-            gap: 8px !important;
-        }
-
-        .summarizer-summary-close {
-            background: rgba(255, 255, 255, 0.2) !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            color: #fff !important;
-            font-size: 20px !important;
-            font-weight: 600 !important;
-            width: 32px !important;
-            height: 32px !important;
-            border-radius: 8px !important;
-            cursor: pointer !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            transition: all 0.2s !important;
-            padding: 0 !important;
-            line-height: 1 !important;
-        }
-
-        .summarizer-summary-close:hover {
-            background: rgba(255, 255, 255, 0.3) !important;
-            transform: scale(1.05) !important;
-        }
-
-        .summarizer-summary-content {
-            padding: 28px 40px !important;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-            font-size: var(--summarizer-font-size, 17px) !important;
-            line-height: var(--summarizer-line-height, 1.8) !important;
-            font-weight: 400 !important;
-            color: #2d3748 !important;
-            max-height: calc(90vh - 180px) !important;
-            overflow-y: auto !important;
-            overscroll-behavior: contain !important;
-        }
-
-        .summarizer-summary-content-inner {
-            max-width: 680px !important;
-            margin: 0 auto !important;
-        }
-
-        .summarizer-summary-content p {
-            margin: 0 0 1.25em 0 !important;
-            text-align: left !important;
-            word-spacing: 0.05em !important;
-            letter-spacing: 0.01em !important;
-            font-size: inherit !important;
-            line-height: inherit !important;
-            font-family: inherit !important;
-            font-weight: inherit !important;
-            color: inherit !important;
-        }
-
-        .summarizer-summary-content p:last-child {
-            margin-bottom: 0 !important;
-        }
-
-        .summarizer-summary-footer {
-            padding: 16px 20px !important;
-            background: rgba(102, 126, 234, 0.05) !important;
-            border-top: 1px solid rgba(102, 126, 234, 0.15) !important;
-            border-radius: 0 0 13px 13px !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            gap: 8px !important;
-        }
-
-        .summarizer-summary-footer-text {
-            font: 400 11px/1.2 system-ui, sans-serif !important;
-            color: #999 !important;
-            letter-spacing: 0.3px !important;
-        }
-
-        .summarizer-resummarize-btn {
-            background: rgba(255, 255, 255, 0.15) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            color: rgba(255, 255, 255, 0.9) !important;
-            font: 400 12px/1.2 system-ui, sans-serif !important;
-            cursor: pointer !important;
-            height: 32px !important;
-            padding: 0 10px !important;
-            border-radius: 6px !important;
-            transition: all 0.2s !important;
-            margin-left: auto !important;
-            margin-right: 8px !important;
-            display: flex !important;
-            align-items: center !important;
-        }
-
-        .summarizer-resummarize-btn:hover {
-            background: rgba(255, 255, 255, 0.25) !important;
-            color: #fff !important;
-        }
-
-        .summarizer-summary-restore,
-        .summarizer-summary-close-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: #fff !important;
-            border: none !important;
-            padding: 12px 32px !important;
-            border-radius: 8px !important;
-            font: 600 14px/1.2 system-ui, sans-serif !important;
-            cursor: pointer !important;
-            transition: all 0.2s !important;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
-        }
-
-        .summarizer-summary-restore:hover,
-        .summarizer-summary-close-btn:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4) !important;
-        }
-
-        .summarizer-summary-header-controls {
-            display: flex !important;
-            align-items: center !important;
-            gap: 8px !important;
-        }
-
-        .summarizer-summary-settings {
-            position: relative !important;
-        }
-
-        .summarizer-summary-settings-btn {
-            background: rgba(255, 255, 255, 0.2) !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            color: #fff !important;
-            font-size: 18px !important;
-            width: 32px !important;
-            height: 32px !important;
-            border-radius: 8px !important;
-            cursor: pointer !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            transition: all 0.2s !important;
-            padding: 0 !important;
-            line-height: 1 !important;
-        }
-
-        .summarizer-summary-settings-btn:hover {
-            background: rgba(255, 255, 255, 0.3) !important;
-        }
-
-        .summarizer-summary-popover {
-            position: absolute !important;
-            top: 40px !important;
-            right: 0 !important;
-            min-width: 180px !important;
-            background: #fff !important;
-            border: 1px solid #e0e0e0 !important;
-            border-radius: 10px !important;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
-            padding: 16px !important;
-            z-index: 10 !important;
-            display: none !important;
-        }
-
-        .summarizer-summary-popover.open {
-            display: block !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-group {
-            margin-bottom: 14px !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-group:last-child {
-            margin-bottom: 0 !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-label {
-            font: 600 11px/1.2 system-ui, sans-serif !important;
-            color: #667eea !important;
-            margin: 0 0 8px 0 !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.5px !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-options {
-            display: flex !important;
-            gap: 4px !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-option {
-            flex: 1 !important;
-            padding: 6px 8px !important;
-            border: 1px solid #ddd !important;
-            background: #fff !important;
-            color: #666 !important;
-            border-radius: 6px !important;
-            cursor: pointer !important;
-            font: 500 12px/1.2 system-ui, sans-serif !important;
-            text-align: center !important;
-            transition: all 0.15s !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-option:hover {
-            border-color: #667eea !important;
-            color: #667eea !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-option.active {
-            background: #667eea !important;
-            border-color: #667eea !important;
-            color: #fff !important;
-        }
-
-        @keyframes summarizer-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-
-        .summarizer-summary-overlay.summarizer-dark {
-            background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
-            border-color: #4338ca !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-header {
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-content {
-            color: #e5e7eb !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer {
-            background: rgba(30, 27, 75, 0.3) !important;
-            border-top-color: rgba(99, 102, 241, 0.3) !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer-text {
-            color: #6b7280 !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-close-btn {
-            background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%) !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-popover {
-            background: #1f2937 !important;
-            border-color: #374151 !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-label {
-            color: #a5b4fc !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option {
-            background: #374151 !important;
-            border-color: #4b5563 !important;
-            color: #d1d5db !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option:hover {
-            border-color: #6366f1 !important;
-            color: #a5b4fc !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option.active {
-            background: #6366f1 !important;
-            border-color: #6366f1 !important;
-            color: #fff !important;
-        }
-    `;
-        document.head.appendChild(style);
-    }
-
     const OVERLAY_ID = 'summarizer-overlay-singleton';
 
     const CREATION_LOCK_ATTR = 'data-summarizer-creating';
@@ -4157,8 +3852,17 @@
         if (document.body.hasAttribute(CREATION_LOCK_ATTR)) return null;
         document.body.setAttribute(CREATION_LOCK_ATTR, 'true');
 
-        ensureCSS();
+        // Release the lock on every path: if a storage read below were to throw
+        // while the attribute is set, the overlay could never be created again
+        // on this page.
+        try {
+            return await buildOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors);
+        } finally {
+            document.body.removeAttribute(CREATION_LOCK_ATTR);
+        }
+    }
 
+    async function buildOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors) {
         // Load saved display settings
         const savedFontSize = await storage.get(STORAGE_KEYS.SUMMARY_FONT_SIZE) || 'default';
         const savedLineHeight = await storage.get(STORAGE_KEYS.SUMMARY_LINE_HEIGHT) || 'default';
@@ -4287,6 +3991,10 @@
         dragHandle.addEventListener('touchstart', (e) => startDrag(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage));
 
         digestBtns.forEach(btn => {
+            // Keep any active text selection: without this, the mousedown into the
+            // badge collapses the selection (in Chrome at least) before the click
+            // handler gets a chance to read it for "summarize selection".
+            btn.addEventListener('mousedown', (e) => e.preventDefault());
             btn.addEventListener('click', () => {
                 const size = btn.dataset.size;
                 onDigest(size);
@@ -4334,13 +4042,21 @@
             settingsPopover.classList.toggle('open');
         });
 
-        // Close popover when clicking outside (use composedPath to see through shadow DOM)
-        document.addEventListener('click', (e) => {
-            const path = e.composedPath();
-            if (!path.some(el => el.classList && el.classList.contains('summarizer-badge-settings'))) {
-                settingsPopover.classList.remove('open');
-            }
-        });
+        // Close popover when clicking outside (use composedPath to see through
+        // shadow DOM). Registered once for the page and resolved against the
+        // current shadow root, so SPA-driven overlay re-creations don't stack
+        // listeners that pin detached shadow trees in memory.
+        if (!documentClickRegistered) {
+            documentClickRegistered = true;
+            document.addEventListener('click', (e) => {
+                const popover = overlayShadow?.querySelector('.summarizer-settings-popover');
+                if (!popover) return;
+                const path = e.composedPath();
+                if (!path.some(el => el.classList && el.classList.contains('summarizer-badge-settings'))) {
+                    popover.classList.remove('open');
+                }
+            });
+        }
 
         // Handle font size changes
         const fontSizeOptions = overlayShadow.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
@@ -4391,8 +4107,9 @@
             });
         });
 
-        // Listen for system theme changes (for auto mode)
-        if (window.matchMedia) {
+        // Listen for system theme changes (for auto mode). Registered once per
+        // page; the handler reads module state, so re-creations need no rebind.
+        if (!mediaQueryList && window.matchMedia) {
             mediaQueryList = window.matchMedia('(prefers-color-scheme: dark)');
             const handleSystemThemeChange = () => {
                 if (currentTheme === 'auto') {
@@ -4420,11 +4137,14 @@
                     // Ignore modifier-only keys
                     if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
 
+                    // Record via event.code so Alt-composed characters (macOS)
+                    // don't end up as the stored key.
                     const shortcut = {
-                        key: e.key.toUpperCase(),
+                        key: eventKeyName(e),
                         ctrl: e.ctrlKey,
                         alt: e.altKey,
-                        shift: e.shiftKey
+                        shift: e.shiftKey,
+                        meta: e.metaKey
                     };
 
                     const shortcutStr = formatShortcut(shortcut);
@@ -4478,7 +4198,6 @@
         };
         document.addEventListener('keydown', keyboardHandler);
 
-        document.body.removeAttribute(CREATION_LOCK_ATTR);
         return overlay;
     }
 
@@ -4653,7 +4372,7 @@
     /**
      * Show summary overlay (uses Shadow DOM for CSS isolation)
      */
-    async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, onRestore, storage) {
+    async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, storage) {
         removeSummaryOverlay();
 
         // Auto-collapse actions overlay on mobile to prevent overlap
@@ -4750,16 +4469,11 @@
 
         const closeHandler = () => {
             removeSummaryOverlay();
-            if (!isSelectedText) onRestore();
+            updateOverlayStatus('ready');
         };
 
-        if (isSelectedText) {
-            closeBtn.addEventListener('click', removeSummaryOverlay);
-            closeBtnFooter.addEventListener('click', removeSummaryOverlay);
-        } else {
-            closeBtn.addEventListener('click', closeHandler);
-            closeBtnFooter.addEventListener('click', closeHandler);
-        }
+        closeBtn.addEventListener('click', closeHandler);
+        closeBtnFooter.addEventListener('click', closeHandler);
 
         // Re-summarize button
         const resummarizeBtn = summaryOverlayShadow.querySelector('.summarizer-resummarize-btn');
@@ -4836,30 +4550,23 @@
         // Close overlay when clicking the backdrop (the inner overlay element itself, not the container)
         innerOverlay.addEventListener('click', (e) => {
             if (e.target === innerOverlay) {
-                if (isSelectedText) {
-                    removeSummaryOverlay();
-                } else {
-                    closeHandler();
-                }
+                closeHandler();
             }
         });
 
-        const escHandler = (e) => {
+        // Tracked at module level so removeSummaryOverlay() can unregister it on
+        // every close path (buttons, backdrop, re-summarize) — not just Escape.
+        summaryEscHandler = (e) => {
             if (e.key === 'Escape') {
                 // Close popover first if open
                 if (settingsPopover.classList.contains('open')) {
                     settingsPopover.classList.remove('open');
                     return;
                 }
-                if (isSelectedText) {
-                    removeSummaryOverlay();
-                } else {
-                    closeHandler();
-                }
-                document.removeEventListener('keydown', escHandler);
+                closeHandler();
             }
         };
-        document.addEventListener('keydown', escHandler);
+        document.addEventListener('keydown', summaryEscHandler);
     }
 
     /**
@@ -4867,6 +4574,10 @@
      */
     function removeSummaryOverlay() {
         unlockBodyScroll();
+        if (summaryEscHandler) {
+            document.removeEventListener('keydown', summaryEscHandler);
+            summaryEscHandler = null;
+        }
         if (summaryOverlay && summaryOverlay.isConnected) {
             summaryOverlay.remove();
         }
@@ -4936,27 +4647,61 @@
         // Prevent multiple API key dialogs
         let apiKeyDialogShown = { value: false };
 
-        // Initialize API tracking
-        await initApiTracking(storage);
+        // Load all persisted settings in one parallel batch: GM storage calls go
+        // through the extension bridge, so ~20 sequential awaits are noticeably
+        // slower than a single Promise.all on every page load.
+        const [
+            debugRaw,
+            selectorsGlobalRaw,
+            excludesGlobalRaw,
+            domainSelectorsRaw,
+            domainExcludesRaw,
+            domainsModeRaw,
+            domainDenyRaw,
+            domainAllowRaw,
+            customPromptRaw,
+            simplificationRaw,
+            overlayCollapsedRaw,
+            overlayPosRaw,
+            autoSimplifyRaw,
+            minTextLengthRaw,
+            firstInstallRaw,
+            apiKeyRaw,
+            justEnabledRaw
+        ] = await Promise.all([
+            storage.get(STORAGE_KEYS.DEBUG, ''),
+            storage.get(STORAGE_KEYS.SELECTORS_GLOBAL, ''),
+            storage.get(STORAGE_KEYS.EXCLUDES_GLOBAL, ''),
+            storage.get(STORAGE_KEYS.DOMAIN_SELECTORS, '{}'),
+            storage.get(STORAGE_KEYS.DOMAIN_EXCLUDES, '{}'),
+            storage.get(STORAGE_KEYS.DOMAINS_MODE, 'allow'),
+            storage.get(STORAGE_KEYS.DOMAINS_DENY, '[]'),
+            storage.get(STORAGE_KEYS.DOMAINS_ALLOW, '[]'),
+            storage.get(STORAGE_KEYS.CUSTOM_PROMPT, ''),
+            storage.get(STORAGE_KEYS.SIMPLIFICATION_STRENGTH, ''),
+            storage.get(STORAGE_KEYS.OVERLAY_COLLAPSED, ''),
+            storage.get(STORAGE_KEYS.OVERLAY_POS, ''),
+            storage.get(STORAGE_KEYS.AUTO_SIMPLIFY, ''),
+            storage.get(STORAGE_KEYS.MIN_TEXT_LENGTH, ''),
+            storage.get(STORAGE_KEYS.FIRST_INSTALL, ''),
+            storage.get(STORAGE_KEYS.OPENAI_KEY, ''),
+            storage.get(STORAGE_KEYS.JUST_ENABLED, ''),
+            initApiTracking(storage)
+        ]);
 
-        // Load toggles
-        try { const v = await storage.get(STORAGE_KEYS.DEBUG, ''); if (v !== '') CFG.DEBUG = (v === true || v === 'true'); } catch {}
+        // Debug toggle
+        if (debugRaw !== '') CFG.DEBUG = (debugRaw === true || debugRaw === 'true');
 
-        // Domain mode + lists
-        let DOMAINS_MODE = 'allow';
-        let DOMAIN_DENY = [];
-        let DOMAIN_ALLOW = [];
-
-        // Load persisted data
+        // Article extraction selectors (global + per-domain)
         let SELECTORS_GLOBAL = [...DEFAULT_SELECTORS];
         let EXCLUDE_GLOBAL = { ...DEFAULT_EXCLUDES, ancestors: [...DEFAULT_EXCLUDES.ancestors] };
         let DOMAIN_SELECTORS = {};
         let DOMAIN_EXCLUDES = {};
 
-        try { SELECTORS_GLOBAL = JSON.parse(await storage.get(STORAGE_KEYS.SELECTORS_GLOBAL, JSON.stringify(DEFAULT_SELECTORS))); } catch {}
-        try { EXCLUDE_GLOBAL = JSON.parse(await storage.get(STORAGE_KEYS.EXCLUDES_GLOBAL, JSON.stringify(DEFAULT_EXCLUDES))); } catch {}
-        try { DOMAIN_SELECTORS = JSON.parse(await storage.get(STORAGE_KEYS.DOMAIN_SELECTORS, '{}')); } catch {}
-        try { DOMAIN_EXCLUDES = JSON.parse(await storage.get(STORAGE_KEYS.DOMAIN_EXCLUDES, '{}')); } catch {}
+        try { if (selectorsGlobalRaw) SELECTORS_GLOBAL = JSON.parse(selectorsGlobalRaw); } catch {}
+        try { if (excludesGlobalRaw) EXCLUDE_GLOBAL = JSON.parse(excludesGlobalRaw); } catch {}
+        try { DOMAIN_SELECTORS = JSON.parse(domainSelectorsRaw); } catch {}
+        try { DOMAIN_EXCLUDES = JSON.parse(domainExcludesRaw); } catch {}
 
         // Load domain-specific settings for current host
         let SELECTORS_DOMAIN = DOMAIN_SELECTORS[HOST] || [];
@@ -4973,49 +4718,46 @@
             log('domain-specific additions for', HOST, ':', { selectors: SELECTORS_DOMAIN, excludes: EXCLUDE_DOMAIN });
         }
 
-        try { DOMAINS_MODE = await storage.get(STORAGE_KEYS.DOMAINS_MODE, 'allow'); } catch {}
-        try { DOMAIN_DENY = JSON.parse(await storage.get(STORAGE_KEYS.DOMAINS_DENY, '[]')); } catch {}
-        try { DOMAIN_ALLOW = JSON.parse(await storage.get(STORAGE_KEYS.DOMAINS_ALLOW, '[]')); } catch {}
+        // Domain mode + lists
+        let DOMAINS_MODE = domainsModeRaw || 'allow';
+        let DOMAIN_DENY = [];
+        let DOMAIN_ALLOW = [];
+        try { DOMAIN_DENY = JSON.parse(domainDenyRaw); } catch {}
+        try { DOMAIN_ALLOW = JSON.parse(domainAllowRaw); } catch {}
 
         // Load prompts
         let CUSTOM_PROMPTS = { ...DEFAULT_PROMPTS };
-        try { const v = await storage.get(STORAGE_KEYS.CUSTOM_PROMPT, ''); if (v) CUSTOM_PROMPTS = JSON.parse(v); } catch {}
+        try { if (customPromptRaw) CUSTOM_PROMPTS = JSON.parse(customPromptRaw); } catch {}
 
         // Load simplification style
         let SIMPLIFICATION_LEVEL = 'Balanced';
-        try {
-            const v = await storage.get(STORAGE_KEYS.SIMPLIFICATION_STRENGTH, '');
-            log('Loaded simplification style from storage:', v, 'valid:', SIMPLIFICATION_LEVELS.includes(v));
-            if (v && SIMPLIFICATION_LEVELS.includes(v)) {
-                SIMPLIFICATION_LEVEL = v;
-            }
-        } catch {}
+        log('Loaded simplification style from storage:', simplificationRaw, 'valid:', SIMPLIFICATION_LEVELS.includes(simplificationRaw));
+        if (simplificationRaw && SIMPLIFICATION_LEVELS.includes(simplificationRaw)) {
+            SIMPLIFICATION_LEVEL = simplificationRaw;
+        }
         log('Using simplification level:', SIMPLIFICATION_LEVEL);
 
         // Overlay state
         let OVERLAY_COLLAPSED = { value: false };
-        try { const v = await storage.get(STORAGE_KEYS.OVERLAY_COLLAPSED, ''); if (v !== '') OVERLAY_COLLAPSED.value = (v === true || v === 'true'); } catch {}
+        if (overlayCollapsedRaw !== '') OVERLAY_COLLAPSED.value = (overlayCollapsedRaw === true || overlayCollapsedRaw === 'true');
 
         let OVERLAY_POS = { x: document.documentElement.clientWidth - BADGE_WIDTH, y: window.innerHeight * 0.7 };
-        try { const v = await storage.get(STORAGE_KEYS.OVERLAY_POS, ''); if (v) OVERLAY_POS = JSON.parse(v); } catch {}
+        try { if (overlayPosRaw) OVERLAY_POS = JSON.parse(overlayPosRaw); } catch {}
 
         // Auto-simplify setting
         let AUTO_SIMPLIFY = false;
-        try { const v = await storage.get(STORAGE_KEYS.AUTO_SIMPLIFY, ''); if (v !== '') AUTO_SIMPLIFY = (v === true || v === 'true'); } catch {}
+        if (autoSimplifyRaw !== '') AUTO_SIMPLIFY = (autoSimplifyRaw === true || autoSimplifyRaw === 'true');
 
         // Minimum text length for extraction
         let MIN_TEXT_LENGTH = DEFAULT_MIN_TEXT_LENGTH;
-        try {
-            const v = await storage.get(STORAGE_KEYS.MIN_TEXT_LENGTH, '');
-            if (v !== '') {
-                const parsed = parseInt(v, 10);
-                if (!isNaN(parsed) && parsed >= 0) MIN_TEXT_LENGTH = parsed;
-            }
-        } catch {}
+        if (minTextLengthRaw !== '') {
+            const parsed = parseInt(minTextLengthRaw, 10);
+            if (!isNaN(parsed) && parsed >= 0) MIN_TEXT_LENGTH = parsed;
+        }
 
-        // Initialize cache
+        // Cache loads lazily on first use, so disabled/idle pages skip the
+        // JSON.parse of the stored summaries entirely.
         const cache = new DigestCache(storage);
-        await cache.init();
 
         // Domain matching
         function computeDomainDisabled(host) {
@@ -5027,9 +4769,9 @@
         log('domain check:', HOST, 'mode=', DOMAINS_MODE, 'disabled=', DOMAIN_DISABLED);
 
         // Register Domain Controls menu BEFORE early return so users can enable disabled domains
-        GM_registerMenuCommand?.('--- Domain Controls ---', () => {});
+        registerMenuCommand('--- Domain Controls ---', () => {});
 
-        GM_registerMenuCommand?.(
+        registerMenuCommand(
             DOMAINS_MODE === 'allow' ? 'Domain mode: Allowlist only' : 'Domain mode: All domains with Denylist',
             async () => {
                 DOMAINS_MODE = (DOMAINS_MODE === 'allow') ? 'deny' : 'allow';
@@ -5038,7 +4780,7 @@
             }
         );
 
-        GM_registerMenuCommand?.(
+        registerMenuCommand(
             computeDomainDisabled(HOST) ? `Current page: DISABLED (click to enable)` : `Current page: ENABLED (click to disable)`,
             async () => {
                 const wasDisabled = computeDomainDisabled(HOST);
@@ -5065,17 +4807,13 @@
             }
         );
 
-        GM_registerMenuCommand?.('Edit domain allowlist', () => {
+        registerMenuCommand('Edit domain allowlist', () => {
             openDomainEditor(storage, 'allow', DOMAIN_ALLOW, DOMAIN_DENY);
         });
 
-        GM_registerMenuCommand?.('Edit domain denylist', () => {
+        registerMenuCommand('Edit domain denylist', () => {
             openDomainEditor(storage, 'deny', DOMAIN_ALLOW, DOMAIN_DENY);
         });
-
-        // Original article content (for restore functionality)
-        let originalContent = null;
-        let lastSummarizedContainer = null;
 
         // Digest handler
         async function handleDigest(size) {
@@ -5109,13 +4847,7 @@
                     return;
                 }
 
-                const { text, elements, source, container } = textData;
-
-                // Store original content for restore
-                if (source === 'article' && container && !originalContent) {
-                    originalContent = container.innerHTML;
-                    lastSummarizedContainer = container;
-                }
+                const { text, source, container } = textData;
 
                 log(`Digesting ${text.length} chars from ${source}`);
 
@@ -5128,13 +4860,12 @@
                     prompt,
                     SIMPLIFICATION_LEVEL,
                     (t, m) => cache.get(t, m),
-                    async (t, m, r) => await cache.set(t, m, r),
-                    (msg) => openKeyDialog(storage, msg, apiKeyDialogShown),
-                    openInfo
+                    (t, m, r) => cache.set(t, m, r),
+                    (msg) => openKeyDialog(storage, msg, apiKeyDialogShown)
                 );
 
                 updateOverlayStatus('digested', mode);
-                showSummaryOverlay(result, mode, container, OVERLAY_COLLAPSED, restoreOriginal, storage);
+                showSummaryOverlay(result, mode, container, OVERLAY_COLLAPSED, storage);
 
             } catch (err) {
                 console.error('Digest error:', err);
@@ -5143,25 +4874,14 @@
             }
         }
 
-        // Restore original article content
-        function restoreOriginal() {
-            if (originalContent && lastSummarizedContainer) {
-                setHTML(lastSummarizedContainer, originalContent);
-                originalContent = null;
-                lastSummarizedContainer = null;
-            }
-            updateOverlayStatus('ready');
-            removeSummaryOverlay();
-        }
-
         // Inspection mode handler
         function handleInspection() {
             exitSummaryHighlight();
-            enterInspectionMode(
+            enterInspectionMode({
                 SELECTORS, HOST, SELECTORS_GLOBAL, SELECTORS_DOMAIN,
                 EXCLUDE_GLOBAL, EXCLUDE_DOMAIN, EXCLUDE,
                 storage, DOMAIN_SELECTORS, DOMAIN_EXCLUDES, openInfo
-            );
+            });
         }
 
         // Summary highlight handler
@@ -5201,39 +4921,25 @@
         }
 
         // Menu commands
-        GM_registerMenuCommand?.('--- Configuration ---', () => {});
+        registerMenuCommand('--- Configuration ---', () => {});
 
-        GM_registerMenuCommand?.('Set / Validate OpenAI API key', async () => {
-            const current = await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-            openEditor({
-                title: 'OpenAI API key',
-                mode: 'secret',
-                initial: current,
-                hint: 'Stored locally (GM → localStorage → memory). Validate sends GET /v1/models.',
-                onSave: async (val) => { await storage.set(STORAGE_KEYS.OPENAI_KEY, val); },
-                onValidate: async (val) => {
-                    const { xhrGet } = await Promise.resolve().then(function () { return api; });
-                    const key = val || await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
-                    if (!key) { openInfo('No key to test'); return; }
-                    try { await xhrGet('https://api.openai.com/v1/models', { Authorization: `Bearer ${key}` }); openInfo('Validation OK (HTTP 200)'); }
-                    catch (e) { openInfo(`Validation failed: ${e.message || e}`); }
-                }
-            });
+        registerMenuCommand('Set / Validate OpenAI API key', () => {
+            openApiKeyEditor(storage);
         });
 
-        GM_registerMenuCommand?.(`Select AI Model (${MODEL_OPTIONS[CFG.model]?.name || CFG.model})`, () => {
+        registerMenuCommand(`Select AI Model (${MODEL_OPTIONS[CFG.model]?.name || CFG.model})`, () => {
             openModelSelectionDialog(storage, CFG.model, setModel);
         });
 
-        GM_registerMenuCommand?.(`Simplification style (${SIMPLIFICATION_LEVEL})`, () => {
+        registerMenuCommand(`Simplification style (${SIMPLIFICATION_LEVEL})`, () => {
             openSimplificationStyleDialog(storage, SIMPLIFICATION_LEVEL, setSimplification);
         });
 
-        GM_registerMenuCommand?.('Custom prompts', () => {
+        registerMenuCommand('Custom prompts', () => {
             openCustomPromptDialog(storage, CUSTOM_PROMPTS, setCustomPrompts);
         });
 
-        GM_registerMenuCommand?.(`Minimum text length (${MIN_TEXT_LENGTH} chars)`, () => {
+        registerMenuCommand(`Minimum text length (${MIN_TEXT_LENGTH} chars)`, () => {
             const input = prompt(`Minimum text length for extraction (current: ${MIN_TEXT_LENGTH} chars):`, MIN_TEXT_LENGTH);
             if (input === null) return;
             const val = parseInt(input, 10);
@@ -5277,47 +4983,47 @@
             });
         }
 
-        GM_registerMenuCommand?.('Edit Selectors', handleEditSelectors);
+        registerMenuCommand('Edit Selectors', handleEditSelectors);
 
         // Toggles
-        GM_registerMenuCommand?.('--- Toggles ---', () => {});
+        registerMenuCommand('--- Toggles ---', () => {});
 
-        GM_registerMenuCommand?.(`Toggle DEBUG logs (${CFG.DEBUG ? 'ON' : 'OFF'})`, async () => {
+        registerMenuCommand(`Toggle DEBUG logs (${CFG.DEBUG ? 'ON' : 'OFF'})`, async () => {
             CFG.DEBUG = !CFG.DEBUG;
             await storage.set(STORAGE_KEYS.DEBUG, String(CFG.DEBUG));
             location.reload();
         });
 
-        GM_registerMenuCommand?.(`Toggle auto-simplify (${AUTO_SIMPLIFY ? 'ON' : 'OFF'})`, async () => {
+        registerMenuCommand(`Toggle auto-simplify (${AUTO_SIMPLIFY ? 'ON' : 'OFF'})`, async () => {
             await setAutoSimplify(!AUTO_SIMPLIFY);
         });
 
         // Actions
-        GM_registerMenuCommand?.('--- Actions ---', () => {});
+        registerMenuCommand('--- Actions ---', () => {});
 
-        GM_registerMenuCommand?.('Show usage statistics', () => {
-            showStats(cache.size);
+        registerMenuCommand('Show usage statistics', async () => {
+            showStats(await cache.getSize());
         });
 
-        GM_registerMenuCommand?.('Flush cache & reload', async () => {
+        registerMenuCommand('Flush cache & reload', async () => {
             await cache.clear();
             location.reload();
         });
 
-        GM_registerMenuCommand?.('Reset API usage stats', async () => {
+        registerMenuCommand('Reset API usage stats', async () => {
             await resetApiTokens(storage);
             openInfo('API usage stats reset. Token counters and cost tracking cleared.');
         });
 
-        GM_registerMenuCommand?.('Inspect element', handleInspection);
+        registerMenuCommand('Inspect element', handleInspection);
 
-        GM_registerMenuCommand?.('Included in summary', () => {
+        registerMenuCommand('Included in summary', () => {
             showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
         });
 
         // Bootstrap
-        const isFirstInstall = await storage.get(STORAGE_KEYS.FIRST_INSTALL, '') === '';
-        const hasApiKey = (await storage.get(STORAGE_KEYS.OPENAI_KEY, '')) !== '';
+        const isFirstInstall = firstInstallRaw === '';
+        const hasApiKey = apiKeyRaw !== '';
 
         if (isFirstInstall) {
             log('First install detected');
@@ -5344,8 +5050,7 @@
         }
 
         // If domain was just enabled, force overlay open and clear the flag
-        const justEnabled = await storage.get(STORAGE_KEYS.JUST_ENABLED, '');
-        if (justEnabled === 'true') {
+        if (justEnabledRaw === 'true') {
             OVERLAY_COLLAPSED.value = false;
             await storage.set(STORAGE_KEYS.OVERLAY_COLLAPSED, 'false');
             await storage.set(STORAGE_KEYS.JUST_ENABLED, '');

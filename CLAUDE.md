@@ -49,6 +49,7 @@ Core modules in `src/modules/`:
 | `extraction.js` | Article text extraction using configurable CSS selectors, text selection handling |
 | `selectors.js` | Glob/regex pattern matching for domains, CSS selector utilities |
 | `overlay.js` | Badge UI, summary overlay, drag functionality |
+| `dialog.js` | Shared modal dialog shell (shadow DOM, backdrop/Escape close) |
 | `settings.js` | Settings dialogs, editors, model/prompt configuration |
 | `inspection.js` | Element inspection mode for debugging selector matching |
 | `utils.js` | Text processing, logging utilities |
@@ -62,7 +63,8 @@ Core modules in `src/modules/`:
 
 ### UI Patterns
 
-- **Shadow DOM for all injected UI**: Badge, summary overlay, and Edit Selectors dialog all use Shadow DOM for complete CSS isolation from host pages. Badge CSS lives in `getBadgeShadowCSS()`, summary overlay CSS in `getSummaryOverlayShadowCSS()`. Shared styles (popover, settings options, dark mode) must be updated in both. `ensureCSS()` only contains summary overlay `!important` fallback styles.
+- **Shadow DOM for all injected UI**: Badge, summary overlay, and all dialogs use Shadow DOM for complete CSS isolation from host pages. Badge CSS lives in `getBadgeShadowCSS()`, summary overlay CSS in `getSummaryOverlayShadowCSS()`. Shared styles (popover, settings options, dark mode) must be updated in both. There is no page-level fallback stylesheet — document-level CSS cannot reach inside shadow roots. Dialogs share the `createDialog()` shell in `dialog.js`.
+- **GM API guards**: Never call legacy `GM_*` functions bare (even with optional chaining) — Greasemonkey 4 doesn't declare them and `GM_x?.()` still throws a ReferenceError. Use the helpers in `utils.js` (e.g. `registerMenuCommand()`) or a `typeof` check with a `GM.*` fallback.
 - **Trusted Types support**: All `innerHTML` assignments use the `setHTML()` helper (in `utils.js`) which creates a Trusted Types policy when required by CSP (e.g. Gmail).
 - **stopPropagation on handlers**: Add `e.stopPropagation()` to click handlers in injected UI to prevent site scripts from interfering. For document-level listeners that need to see inside shadow DOM, use `e.composedPath()`.
 - **Viewport-aware positioning**: Badge is draggable, so popovers/menus must check available space and flip direction (see `popover-below` class).

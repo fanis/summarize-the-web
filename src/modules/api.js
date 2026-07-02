@@ -17,26 +17,27 @@ export let PRICING = { ...DEFAULT_PRICING };
  * Initialize API tracking from storage
  */
 export async function initApiTracking(storage) {
+    const [tokensRaw, pricingRaw, modelRaw] = await Promise.all([
+        storage.get(STORAGE_KEYS.API_TOKENS, ''),
+        storage.get(STORAGE_KEYS.PRICING, ''),
+        storage.get(STORAGE_KEYS.MODEL, '')
+    ]);
+
     try {
-        const stored = await storage.get(STORAGE_KEYS.API_TOKENS, '');
-        if (stored) API_TOKENS = JSON.parse(stored);
+        if (tokensRaw) API_TOKENS = JSON.parse(tokensRaw);
     } catch {}
 
     try {
-        const stored = await storage.get(STORAGE_KEYS.PRICING, '');
-        if (stored) PRICING = JSON.parse(stored);
+        if (pricingRaw) PRICING = JSON.parse(pricingRaw);
     } catch {}
 
-    // Load saved model preference
-    try {
-        const stored = await storage.get(STORAGE_KEYS.MODEL, '');
-        if (stored && MODEL_OPTIONS[stored]) {
-            CFG.model = stored;
-            PRICING.model = stored;
-            PRICING.inputPer1M = MODEL_OPTIONS[stored].inputPer1M;
-            PRICING.outputPer1M = MODEL_OPTIONS[stored].outputPer1M;
-        }
-    } catch {}
+    // Apply saved model preference
+    if (modelRaw && MODEL_OPTIONS[modelRaw]) {
+        CFG.model = modelRaw;
+        PRICING.model = modelRaw;
+        PRICING.inputPer1M = MODEL_OPTIONS[modelRaw].inputPer1M;
+        PRICING.outputPer1M = MODEL_OPTIONS[modelRaw].outputPer1M;
+    }
 }
 
 /**
@@ -120,6 +121,19 @@ export function extractOutputText(data) {
     return '';
 }
 
+// Debounced token-stat persistence; flushed on page hide so a navigation
+// right after a summary doesn't lose the update.
+let pendingTokenSave = null;
+let tokenStorage = null;
+let tokenFlushRegistered = false;
+
+function flushPendingTokenSave() {
+    if (!pendingTokenSave) return;
+    clearTimeout(pendingTokenSave);
+    pendingTokenSave = null;
+    tokenStorage?.set(STORAGE_KEYS.API_TOKENS, JSON.stringify(API_TOKENS));
+}
+
 /**
  * Update API token usage stats
  */
@@ -140,8 +154,18 @@ export function updateApiTokens(storage, type, usage) {
 
     log(`${type} tokens: +${inputTokens} input, +${outputTokens} output (total: ${API_TOKENS[type].input + API_TOKENS[type].output})`);
 
-    clearTimeout(updateApiTokens._timer);
-    updateApiTokens._timer = setTimeout(() => {
+    tokenStorage = storage;
+    if (!tokenFlushRegistered) {
+        tokenFlushRegistered = true;
+        window.addEventListener('pagehide', flushPendingTokenSave);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushPendingTokenSave();
+        });
+    }
+
+    clearTimeout(pendingTokenSave);
+    pendingTokenSave = setTimeout(() => {
+        pendingTokenSave = null;
         storage.set(STORAGE_KEYS.API_TOKENS, JSON.stringify(API_TOKENS));
         log('API tokens updated and saved:', API_TOKENS);
     }, 1000);
@@ -188,7 +212,7 @@ export async function resetPricingToDefaults(storage) {
 /**
  * Call OpenAI API to digest text
  */
-export async function digestText(storage, text, mode, prompt, styleLevel, cacheGet, cacheSet, openKeyDialog, openInfo) {
+export async function digestText(storage, text, mode, prompt, styleLevel, cacheGet, cacheSet, openKeyDialog) {
     const KEY = await storage.get(STORAGE_KEYS.OPENAI_KEY, '');
     if (!KEY) {
         openKeyDialog('OpenAI API key missing.');
@@ -196,7 +220,7 @@ export async function digestText(storage, text, mode, prompt, styleLevel, cacheG
     }
 
     // Check cache first
-    const cached = cacheGet(text, mode);
+    const cached = await cacheGet(text, mode);
     if (cached) {
         log(`Using cached summary for ${mode} mode`);
         return cached.result;

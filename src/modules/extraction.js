@@ -4,32 +4,14 @@
 
 import { UI_ATTR } from './config.js';
 import { log } from './utils.js';
+import { isExcludedElement } from './selectors.js';
 
 /**
  * Check if element is excluded based on exclusion rules
  */
 export function isExcluded(el, EXCLUDE) {
     if (!el) return true;
-
-    // Check if element itself matches exclusion selectors
-    if (EXCLUDE.self) {
-        for (const sel of EXCLUDE.self) {
-            try {
-                if (el.matches(sel)) return true;
-            } catch {}
-        }
-    }
-
-    // Check if any ancestor matches exclusion selectors
-    if (EXCLUDE.ancestors) {
-        for (const sel of EXCLUDE.ancestors) {
-            try {
-                if (el.closest(sel)) return true;
-            } catch {}
-        }
-    }
-
-    return false;
+    return isExcludedElement(el, EXCLUDE);
 }
 
 /**
@@ -83,15 +65,16 @@ function cleanContainerText(container, EXCLUDE) {
 }
 
 /**
- * Extract article body using configured selectors
- * @param {string[]} SELECTORS - CSS selectors to find container
- * @param {Object} EXCLUDE - Exclusion rules
- * @param {number} minLength - Minimum text length required
- * @returns {Object|null} - { text, container, title } or { error, ... } or null
+ * Find and rank article container candidates. Shared by extraction and the
+ * summary-highlight inspection view so the dominance heuristic lives in one
+ * place.
+ * @param {string[]} SELECTORS - CSS selectors to find containers
+ * @param {number} minLength - Minimum text length for a significant container
+ * @returns {Object|null} - { selected, candidates } where selected holds one
+ *   entry (single container) or several (non-nested containers to combine),
+ *   or null when no selector matched anything.
  */
-export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
-    let container = null;
-
+export function selectContainers(SELECTORS, minLength = 100) {
     // Get total page text for comparison
     const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
     const bodyLength = bodyText.length || 1; // Avoid division by zero
@@ -106,19 +89,49 @@ export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
             const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
             const percent = Math.round((rawText.length / bodyLength) * 100);
 
-            candidates.push({ candidate, selector, text: rawText, length: rawText.length, percent });
+            candidates.push({ candidate, selector, length: rawText.length, percent });
         } catch (e) {
             // Invalid selector, skip
         }
     }
 
-    if (candidates.length === 0) {
-        log('No article container found');
-        return { error: 'no_container' };
-    }
+    if (candidates.length === 0) return null;
 
     // Sort by text length descending
     candidates.sort((a, b) => b.length - a.length);
+    const best = candidates[0];
+
+    // Check if one container is dominant (>70% of page, and next best is <50% of best)
+    const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
+    if (dominated) {
+        return { selected: [best], candidates };
+    }
+
+    // Multiple significant containers - combine non-nested ones
+    const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
+    const nonNested = significant.filter((c, i) =>
+        !significant.some((other, j) => i !== j &&
+            (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
+        )
+    );
+
+    return { selected: nonNested.length > 1 ? nonNested : [best], candidates };
+}
+
+/**
+ * Extract article body using configured selectors
+ * @param {string[]} SELECTORS - CSS selectors to find container
+ * @param {Object} EXCLUDE - Exclusion rules
+ * @param {number} minLength - Minimum text length required
+ * @returns {Object|null} - { text, container, title } or { error, ... } or null
+ */
+export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
+    const selection = selectContainers(SELECTORS, minLength);
+    if (!selection) {
+        log('No article container found');
+        return { error: 'no_container' };
+    }
+    const { selected, candidates } = selection;
 
     // Log top candidates for debugging
     const topCandidates = candidates.slice(0, 5).filter(c => c.length > 0);
@@ -126,48 +139,23 @@ export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
         log('Container candidates:', topCandidates.map(c => `${c.selector} (${c.percent}%)`).join(', '));
     }
 
-    const best = candidates[0];
+    if (selected.length > 1) {
+        // Combine cleaned text from multiple containers
+        const combinedText = selected.map(c => cleanContainerText(c.candidate, EXCLUDE)).join('\n\n');
+        log('Combined', selected.length, 'containers:', selected.map(c => c.selector).join(', '));
 
-    // Check if one container is dominant (>70% of page, and next best is <50% of best)
-    const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
-
-    if (dominated) {
-        container = best.candidate;
-        log('Selected container:', best.selector, '(dominant, ' + best.percent + '% of page)');
-    } else {
-        // Multiple significant containers - combine non-nested ones
-        const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
-
-        // Filter out nested containers (keep only if not ancestor/descendant of another)
-        const nonNested = significant.filter((c, i) =>
-            !significant.some((other, j) => i !== j &&
-                (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
-            )
-        );
-
-        if (nonNested.length > 1) {
-            // Combine cleaned text from multiple containers
-            const combinedTexts = nonNested.map(c => cleanContainerText(c.candidate, EXCLUDE));
-            const combinedText = combinedTexts.join('\n\n');
-            log('Combined', nonNested.length, 'containers:', nonNested.map(c => c.selector).join(', '));
-
-            if (combinedText.length < minLength) {
-                log(`Combined text too short: ${combinedText.length} < ${minLength}`);
-                return { error: 'article_too_short', actualLength: combinedText.length, minLength };
-            }
-
-            log(`Extracted ${combinedText.length} characters from combined containers`);
-            return { text: combinedText, elements: null, container: nonNested[0].candidate, title: null };
+        if (combinedText.length < minLength) {
+            log(`Combined text too short: ${combinedText.length} < ${minLength}`);
+            return { error: 'article_too_short', actualLength: combinedText.length, minLength };
         }
 
-        container = best.candidate;
-        log('Selected container:', best.selector, 'with', best.length, 'chars', `(${best.percent}% of page)`);
+        log(`Extracted ${combinedText.length} characters from combined containers`);
+        return { text: combinedText, elements: null, container: selected[0].candidate, title: null };
     }
 
-    if (!container) {
-        log('No article container found');
-        return { error: 'no_container' };
-    }
+    const best = selected[0];
+    const container = best.candidate;
+    log('Selected container:', best.selector, 'with', best.length, 'chars', `(${best.percent}% of page)`);
 
     // Try to find article title
     let title = null;
