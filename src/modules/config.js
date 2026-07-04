@@ -75,7 +75,7 @@ export const STORAGE_KEYS = {
     FIRST_INSTALL: 'digest_installed_v1',
     API_TOKENS: 'digest_api_tokens_v1',
     PRICING: 'digest_pricing_v1',
-    CACHE: 'digest_cache_v1',
+    CACHE: 'digest_cache_v2',
     MODEL: 'digest_model_v1',
     // Article extraction selectors
     SELECTORS_GLOBAL: 'digest_selectors_v1',

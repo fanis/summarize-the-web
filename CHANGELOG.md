@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Greasemonkey compatibility**: menu commands were registered via bare `GM_registerMenuCommand?.()`, which throws a ReferenceError on Greasemonkey 4 (the legacy function is not declared there) and killed the whole script. Menu registration now goes through a guarded helper with a `GM.registerMenuCommand` fallback, and the metadata block grants `GM.registerMenuCommand`.
+- **macOS keyboard shortcuts**: shortcuts are now matched and recorded via `event.code`, so Alt/Option-composed characters (e.g. Alt+Shift+L producing "Ò") no longer prevent shortcuts from firing. The Meta/Cmd modifier is now part of the match, so Cmd+Alt+Shift+L no longer triggers the Alt+Shift+L shortcut.
+- **Trusted Types hardening**: `setHTML()` no longer throws when the site's CSP allowlists specific policy names or when the policy was already created (script injected twice).
+- Closing a summary no longer rewrites the article container's `innerHTML` (a leftover of the old replace-in-place mode). This previously destroyed the site's own event listeners (embedded players, comment forms) on close.
+- The summary overlay's Escape-key listener is now removed on every close path, not just when Escape itself closed it — stale listeners could accumulate and re-trigger closes of long-gone overlays.
+- The API-key dialog can be reopened after being cancelled; previously a cancelled dialog left a "shown" flag set and blocked all future key prompts until reload.
+- Overlay creation lock is released even when a storage read fails, so a transient error can no longer permanently block badge creation on a page.
+- Text selection is preserved when clicking the badge's Large/Small buttons, making "summarize selection" work consistently across browsers.
+- Pending token-usage writes are flushed on page hide so quick navigations don't lose them.
+- Dialog textareas (custom prompts, domain lists, generic editors) now HTML-escape their content, matching the selector editor.
+
+### Changed
+- **Cache keys are now content hashes** (FNV-1a) instead of the full article text. The cache blob is dramatically smaller and is no longer parsed on every page load — it loads lazily on first use. The legacy full-text cache (`digest_cache_v1`) is deleted on first run; summaries re-cache on demand.
+- Startup storage reads are batched into a single parallel request instead of ~20 sequential round-trips through the GM storage bridge.
+- Removed the 5-second cache auto-save interval; the cache persists immediately on write.
+- Removed ~320 lines of dead page-level fallback CSS (`ensureCSS`): both the badge and the summary overlay live in shadow roots, which document-level styles cannot reach.
+- All settings/inspection dialogs now share a single `createDialog()` shell (shadow DOM, backdrop/Escape close, focus handling).
+- Container-candidate selection logic is shared between extraction and the "Included in summary" highlighter (previously duplicated), and exclusion matching lives in one helper.
+- "Included in summary" highlighting no longer does an O(n²) nested-element scan on long articles.
+- Playwright can now run Firefox and WebKit projects via `ALL_BROWSERS=1` (Chromium remains the default).
+
 ## [2.6.1] - 2026-06-28
 
 ### Fixed

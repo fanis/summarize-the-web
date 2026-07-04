@@ -38,261 +38,217 @@ describe('Overlay Module', () => {
     });
   });
 
-  describe('ensureCSS', () => {
-    it('creates style element when not present', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
-
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
-      vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
-
-      expect(global.document.createElement).toHaveBeenCalledWith('style');
-      expect(createdElement.id).toBe('summarizer-style');
-      expect(global.document.head.appendChild).toHaveBeenCalledWith(createdElement);
+  describe('shortcut matching', () => {
+    const event = (overrides = {}) => ({
+      key: 'l',
+      code: 'KeyL',
+      altKey: false,
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      ...overrides
     });
 
-    it('skips creation when style already exists', async () => {
-      global.document = {
-        getElementById: vi.fn().mockReturnValue({ id: 'summarizer-style' }),
-        createElement: vi.fn()
-      };
+    it('matches a plain letter shortcut via event.code', async () => {
+      const { matchesShortcut } = await import('../../src/modules/overlay.js');
+      const shortcut = { key: 'L', alt: true, shift: true, ctrl: false };
 
-      vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
-
-      expect(global.document.createElement).not.toHaveBeenCalled();
+      expect(matchesShortcut(event({ altKey: true, shiftKey: true }), shortcut)).toBe(true);
     });
 
-    it('includes summarizer-overlay class in CSS', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
+    it('matches even when event.key is an Alt-composed character (macOS)', async () => {
+      const { matchesShortcut } = await import('../../src/modules/overlay.js');
+      const shortcut = { key: 'L', alt: true, shift: true, ctrl: false };
 
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
-      vi.resetModules();
-      const { ensureCSS, getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
-      const badgeCSS = getBadgeShadowCSS();
-
-      // Badge CSS is now in shadow DOM, summary overlay CSS stays in ensureCSS
-      expect(badgeCSS).toContain('position: fixed');
-      expect(createdElement.textContent).toContain('.summarizer-summary-overlay');
+      // On macOS, Alt+Shift+L produces "Ò" in event.key but code stays KeyL
+      const macEvent = event({ key: 'Ò', altKey: true, shiftKey: true });
+      expect(matchesShortcut(macEvent, shortcut)).toBe(true);
     });
 
-    it('includes collapsed state styles in badge shadow CSS', async () => {
-      vi.resetModules();
+    it('does not match when Meta/Cmd is also held', async () => {
+      const { matchesShortcut } = await import('../../src/modules/overlay.js');
+      const shortcut = { key: 'L', alt: true, shift: true, ctrl: false };
+
+      expect(matchesShortcut(event({ altKey: true, shiftKey: true, metaKey: true }), shortcut)).toBe(false);
+    });
+
+    it('does not match when modifiers differ', async () => {
+      const { matchesShortcut } = await import('../../src/modules/overlay.js');
+      const shortcut = { key: 'L', alt: true, shift: true, ctrl: false };
+
+      expect(matchesShortcut(event({ altKey: true }), shortcut)).toBe(false);
+      expect(matchesShortcut(event({ shiftKey: true }), shortcut)).toBe(false);
+    });
+
+    it('returns false for null shortcut', async () => {
+      const { matchesShortcut } = await import('../../src/modules/overlay.js');
+      expect(matchesShortcut(event(), null)).toBe(false);
+    });
+  });
+
+  describe('eventKeyName', () => {
+    it('derives letters from event.code', async () => {
+      const { eventKeyName } = await import('../../src/modules/overlay.js');
+      expect(eventKeyName({ key: 'ò', code: 'KeyL' })).toBe('L');
+    });
+
+    it('derives digits from event.code', async () => {
+      const { eventKeyName } = await import('../../src/modules/overlay.js');
+      expect(eventKeyName({ key: '§', code: 'Digit5' })).toBe('5');
+    });
+
+    it('falls back to event.key for non-letter keys', async () => {
+      const { eventKeyName } = await import('../../src/modules/overlay.js');
+      expect(eventKeyName({ key: 'Enter', code: 'Enter' })).toBe('ENTER');
+      expect(eventKeyName({ key: 'F5', code: 'F5' })).toBe('F5');
+    });
+  });
+
+  describe('Badge shadow CSS', () => {
+    it('includes collapsed state styles', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain(':host(.collapsed)');
+    });
+
+    it('includes fixed positioning on host', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain('position: fixed');
+    });
+
+    it('includes settings button styles', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain('.summarizer-settings-btn');
+    });
+
+    it('includes badge settings container styles', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain('.summarizer-badge-settings');
+    });
+
+    it('includes digest footer layout styles', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain('.summarizer-footer');
+    });
+
+    it('includes settings popover styles', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain('.summarizer-settings-popover');
+    });
+
+    it('includes settings option styles with active state', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain('.summarizer-settings-option');
+      expect(getBadgeShadowCSS()).toContain('.summarizer-settings-option.active');
+    });
+
+    it('popover is hidden by default and shows when open class applied', async () => {
       const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
       const css = getBadgeShadowCSS();
-
-      expect(css).toContain(':host(.collapsed)');
+      expect(css).toMatch(/\.summarizer-settings-popover\s*\{[^}]*display:\s*none/);
+      expect(css).toMatch(/\.summarizer-settings-popover\.open\s*\{[^}]*display:\s*block/);
     });
 
-    it('includes summary overlay styles', async () => {
-      const createdElement = {
-        id: '',
-        textContent: ''
-      };
-
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: {
-          appendChild: vi.fn()
-        }
-      };
-
-      vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
-
-      expect(createdElement.textContent).toContain('.summarizer-summary-overlay');
-    });
-  });
-
-  describe('getOverlay', () => {
-    it('returns null initially', async () => {
-      vi.resetModules();
-      const { getOverlay } = await import('../../src/modules/overlay.js');
-
-      expect(getOverlay()).toBeNull();
-    });
-  });
-
-  describe('Display settings CSS', () => {
-    let ensureCSSText;
-    let badgeShadowCSS;
-
-    beforeEach(async () => {
-      const createdElement = { id: '', textContent: '' };
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: { appendChild: vi.fn() }
-      };
-      vi.resetModules();
-      const mod = await import('../../src/modules/overlay.js');
-      mod.ensureCSS();
-      ensureCSSText = createdElement.textContent;
-      badgeShadowCSS = mod.getBadgeShadowCSS();
-    });
-
-    it('includes CSS custom property for font size', () => {
-      expect(ensureCSSText).toContain('--summarizer-font-size');
-    });
-
-    it('includes CSS custom property for line height', () => {
-      expect(ensureCSSText).toContain('--summarizer-line-height');
-    });
-
-    it('includes settings button styles', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-settings-btn');
-    });
-
-    it('includes badge settings container styles', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-badge-settings');
-    });
-
-    it('includes digest footer layout styles', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-footer');
-    });
-
-    it('includes settings popover styles', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-settings-popover');
-    });
-
-    it('includes settings option styles', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-settings-option');
-    });
-
-    it('includes active state for settings options', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-settings-option.active');
-    });
-
-    it('popover is hidden by default', () => {
-      expect(badgeShadowCSS).toMatch(/\.summarizer-settings-popover\s*\{[^}]*display:\s*none/);
-    });
-
-    it('popover shows when open class applied', () => {
-      expect(badgeShadowCSS).toMatch(/\.summarizer-settings-popover\.open\s*\{[^}]*display:\s*block/);
-    });
-
-    it('includes dark mode class for overlay', () => {
-      expect(badgeShadowCSS).toContain(':host(.summarizer-dark)');
-    });
-
-    it('includes dark mode class for summary overlay', () => {
-      expect(ensureCSSText).toContain('.summarizer-summary-overlay.summarizer-dark');
-    });
-
-    it('includes dark mode styles for settings popover', () => {
-      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-settings-popover');
-    });
-
-    it('includes dark mode styles for buttons', () => {
-      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-btn');
-    });
-
-    it('includes shortcut input styles', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-shortcut-input');
-    });
-
-    it('includes shortcut row styles', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-shortcut-row');
-    });
-
-    it('includes shortcut recording state', () => {
-      expect(badgeShadowCSS).toContain('.summarizer-shortcut-input.recording');
-    });
-
-    it('includes dark mode styles for shortcuts', () => {
-      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-shortcut-input');
-    });
-
-    it('includes summary header controls styles', () => {
-      expect(ensureCSSText).toContain('.summarizer-summary-header-controls');
-    });
-
-    it('includes summary settings button styles', () => {
-      expect(ensureCSSText).toContain('.summarizer-summary-settings-btn');
-    });
-
-    it('includes summary settings container styles', () => {
-      expect(ensureCSSText).toContain('.summarizer-summary-settings');
-    });
-
-    it('includes selectors-btn styles', () => {
-      expect(badgeShadowCSS).toContain('.selectors-btn');
-    });
-
-    it('includes selectors-btn in shared action button rules', () => {
-      expect(badgeShadowCSS).toContain('.selectors-btn,');
-    });
-
-    it('includes dark mode styles for selectors-btn', () => {
-      expect(badgeShadowCSS).toContain(':host(.summarizer-dark) .summarizer-badge-settings .selectors-btn');
-    });
-
-    it('includes explicit hover color for action buttons in light mode', () => {
-      expect(badgeShadowCSS).toMatch(/\.selectors-btn:hover[^}]*color:\s*#4338ca/);
-    });
-
-    it('includes explicit hover color for action buttons in dark mode', () => {
-      expect(badgeShadowCSS).toMatch(/:host\(\.summarizer-dark\)[^}]*\.selectors-btn:hover[^}]*color:\s*#a5b4fc/);
-    });
-  });
-
-  describe('CSS specifications', () => {
-    it('badge shadow CSS includes high z-index for overlay', async () => {
-      vi.resetModules();
+    it('includes dark mode styles', async () => {
       const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
       const css = getBadgeShadowCSS();
-
-      expect(css).toContain('z-index: 2147483646');
+      expect(css).toContain(':host(.summarizer-dark)');
+      expect(css).toContain(':host(.summarizer-dark) .summarizer-settings-popover');
+      expect(css).toContain(':host(.summarizer-dark) .summarizer-btn');
+      expect(css).toContain(':host(.summarizer-dark) .summarizer-shortcut-input');
     });
 
-    it('badge shadow CSS includes width matching BADGE_WIDTH', async () => {
-      vi.resetModules();
+    it('includes shortcut input styles with recording state', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getBadgeShadowCSS();
+      expect(css).toContain('.summarizer-shortcut-input');
+      expect(css).toContain('.summarizer-shortcut-row');
+      expect(css).toContain('.summarizer-shortcut-input.recording');
+    });
+
+    it('includes selectors-btn styles with hover colors in both modes', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getBadgeShadowCSS();
+      expect(css).toContain('.selectors-btn');
+      expect(css).toContain('.selectors-btn,');
+      expect(css).toContain(':host(.summarizer-dark) .summarizer-badge-settings .selectors-btn');
+      expect(css).toMatch(/\.selectors-btn:hover[^}]*color:\s*#4338ca/);
+      expect(css).toMatch(/:host\(\.summarizer-dark\)[^}]*\.selectors-btn:hover[^}]*color:\s*#a5b4fc/);
+    });
+
+    it('includes high z-index for overlay', async () => {
+      const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getBadgeShadowCSS()).toContain('z-index: 2147483646');
+    });
+
+    it('includes width matching BADGE_WIDTH', async () => {
       const { getBadgeShadowCSS, BADGE_WIDTH } = await import('../../src/modules/overlay.js');
-      const css = getBadgeShadowCSS();
-
-      expect(css).toContain(`width: ${BADGE_WIDTH}px`);
+      expect(getBadgeShadowCSS()).toContain(`width: ${BADGE_WIDTH}px`);
     });
 
-    it('badge shadow CSS includes transition for smooth animations', async () => {
-      vi.resetModules();
+    it('includes transition for smooth animations', async () => {
       const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
-      const css = getBadgeShadowCSS();
-
-      expect(css).toContain('transition');
+      expect(getBadgeShadowCSS()).toContain('transition');
     });
 
-    it('badge shadow CSS includes dragging state without transition', async () => {
-      vi.resetModules();
+    it('includes dragging state without transition', async () => {
       const { getBadgeShadowCSS } = await import('../../src/modules/overlay.js');
       const css = getBadgeShadowCSS();
-
       expect(css).toContain(':host(.dragging)');
       expect(css).toContain('transition: none');
+    });
+  });
+
+  describe('Summary overlay shadow CSS', () => {
+    it('includes the summary overlay styles', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getSummaryOverlayShadowCSS()).toContain('.summarizer-summary-overlay');
+    });
+
+    it('uses CSS variable for font-size in summary content', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getSummaryOverlayShadowCSS()).toMatch(/\.summarizer-summary-content[^}]*font-size:\s*var\(--summarizer-font-size/);
+    });
+
+    it('uses CSS variable for line-height in summary content', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getSummaryOverlayShadowCSS()).toMatch(/\.summarizer-summary-content[^}]*line-height:\s*var\(--summarizer-line-height/);
+    });
+
+    it('provides fallback values for CSS variables', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getSummaryOverlayShadowCSS();
+      // Fallback ensures styles work even if variables not set
+      expect(css).toMatch(/--summarizer-font-size,\s*\d+px/);
+      expect(css).toMatch(/--summarizer-line-height,\s*[\d.]+/);
+    });
+
+    it('sets overscroll-behavior contain on summary content to prevent scroll chaining', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getSummaryOverlayShadowCSS()).toMatch(/\.summarizer-summary-content\s*\{[^}]*overscroll-behavior:\s*contain/);
+    });
+
+    it('includes summary header controls and settings styles', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getSummaryOverlayShadowCSS();
+      expect(css).toContain('.summarizer-summary-header-controls');
+      expect(css).toContain('.summarizer-summary-settings-btn');
+      expect(css).toContain('.summarizer-summary-settings');
+    });
+
+    it('sets light text color for dark mode summary content', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      // #e5e7eb is a light gray suitable for dark backgrounds
+      expect(getSummaryOverlayShadowCSS()).toMatch(/\.summarizer-summary-overlay\.summarizer-dark\s+\.summarizer-summary-content[^}]*color:\s*#e5e7eb/);
+    });
+
+    it('sets dark background for dark mode summary overlay', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getSummaryOverlayShadowCSS()).toMatch(/\.summarizer-summary-overlay\.summarizer-dark[^.][^}]*background:/);
+    });
+
+    it('includes print styles hiding interactive controls', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      expect(getSummaryOverlayShadowCSS()).toContain('@media print');
     });
   });
 
@@ -302,21 +258,21 @@ describe('Overlay Module', () => {
       const overlay = await import('../../src/modules/overlay.js');
 
       expect(typeof overlay.BADGE_WIDTH).toBe('number');
-      expect(typeof overlay.ensureCSS).toBe('function');
+      expect(typeof overlay.getBadgeShadowCSS).toBe('function');
+      expect(typeof overlay.getSummaryOverlayShadowCSS).toBe('function');
       expect(typeof overlay.createOverlay).toBe('function');
       expect(typeof overlay.updateOverlayStatus).toBe('function');
       expect(typeof overlay.showSummaryOverlay).toBe('function');
       expect(typeof overlay.removeSummaryOverlay).toBe('function');
       expect(typeof overlay.ensureOverlay).toBe('function');
-      expect(typeof overlay.getOverlay).toBe('function');
+      expect(typeof overlay.matchesShortcut).toBe('function');
+      expect(typeof overlay.eventKeyName).toBe('function');
     });
   });
 
   describe('Body scroll locking', () => {
-    it('locks body scroll when summary overlay is shown', async () => {
-      const bodyStyle = { overflow: '' };
-      const htmlStyle = { overflow: '' };
-      const shadowRoot = {
+    function mockShadowRoot() {
+      return {
         innerHTML: '',
         querySelector: vi.fn().mockReturnValue({
           style: { setProperty: vi.fn() },
@@ -325,12 +281,10 @@ describe('Overlay Module', () => {
         }),
         querySelectorAll: vi.fn().mockReturnValue([])
       };
-      const overlayEl = {
-        setAttribute: vi.fn(),
-        attachShadow: vi.fn().mockReturnValue(shadowRoot),
-        isConnected: false
-      };
-      global.document = {
+    }
+
+    function mockDocument(overlayEl, bodyStyle, htmlStyle) {
+      return {
         getElementById: vi.fn().mockReturnValue(null),
         createElement: vi.fn().mockReturnValue(overlayEl),
         head: { appendChild: vi.fn() },
@@ -345,12 +299,23 @@ describe('Overlay Module', () => {
         addEventListener: vi.fn(),
         removeEventListener: vi.fn()
       };
+    }
+
+    it('locks body scroll when summary overlay is shown', async () => {
+      const bodyStyle = { overflow: '' };
+      const htmlStyle = { overflow: '' };
+      const overlayEl = {
+        setAttribute: vi.fn(),
+        attachShadow: vi.fn().mockReturnValue(mockShadowRoot()),
+        isConnected: false
+      };
+      global.document = mockDocument(overlayEl, bodyStyle, htmlStyle);
       global.window = { matchMedia: vi.fn().mockReturnValue({ matches: false }) };
 
       vi.resetModules();
       const { showSummaryOverlay } = await import('../../src/modules/overlay.js');
       const mockStorage = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
-      await showSummaryOverlay('Test summary', 'digest_large', null, { value: true }, vi.fn(), mockStorage);
+      await showSummaryOverlay('Test summary', 'digest_large', null, { value: true }, mockStorage);
 
       expect(bodyStyle.overflow).toBe('hidden');
       expect(htmlStyle.overflow).toBe('hidden');
@@ -359,42 +324,19 @@ describe('Overlay Module', () => {
     it('restores body scroll when summary overlay is removed', async () => {
       const bodyStyle = { overflow: 'auto' };
       const htmlStyle = { overflow: 'visible' };
-      const shadowRoot = {
-        innerHTML: '',
-        querySelector: vi.fn().mockReturnValue({
-          style: { setProperty: vi.fn() },
-          classList: { add: vi.fn(), remove: vi.fn(), toggle: vi.fn(), contains: vi.fn() },
-          addEventListener: vi.fn()
-        }),
-        querySelectorAll: vi.fn().mockReturnValue([])
-      };
       const overlayEl = {
         setAttribute: vi.fn(),
-        attachShadow: vi.fn().mockReturnValue(shadowRoot),
+        attachShadow: vi.fn().mockReturnValue(mockShadowRoot()),
         isConnected: true,
         remove: vi.fn()
       };
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(overlayEl),
-        head: { appendChild: vi.fn() },
-        body: {
-          appendChild: vi.fn(),
-          style: bodyStyle,
-          hasAttribute: vi.fn().mockReturnValue(false),
-          setAttribute: vi.fn(),
-          removeAttribute: vi.fn()
-        },
-        documentElement: { style: htmlStyle },
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn()
-      };
+      global.document = mockDocument(overlayEl, bodyStyle, htmlStyle);
       global.window = { matchMedia: vi.fn().mockReturnValue({ matches: false }) };
 
       vi.resetModules();
       const { showSummaryOverlay, removeSummaryOverlay } = await import('../../src/modules/overlay.js');
       const mockStorage = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
-      await showSummaryOverlay('Test summary', 'digest_large', null, { value: true }, vi.fn(), mockStorage);
+      await showSummaryOverlay('Test summary', 'digest_large', null, { value: true }, mockStorage);
 
       // Body should now be locked
       expect(bodyStyle.overflow).toBe('hidden');
@@ -406,74 +348,31 @@ describe('Overlay Module', () => {
       expect(bodyStyle.overflow).toBe('auto');
       expect(htmlStyle.overflow).toBe('visible');
     });
-  });
 
-  describe('Summary overlay display settings CSS', () => {
-    let createdElement;
-
-    beforeEach(async () => {
-      createdElement = { id: '', textContent: '' };
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: { appendChild: vi.fn() }
+    it('removes the Escape listener on removeSummaryOverlay', async () => {
+      const bodyStyle = { overflow: '' };
+      const htmlStyle = { overflow: '' };
+      const overlayEl = {
+        setAttribute: vi.fn(),
+        attachShadow: vi.fn().mockReturnValue(mockShadowRoot()),
+        isConnected: true,
+        remove: vi.fn()
       };
+      global.document = mockDocument(overlayEl, bodyStyle, htmlStyle);
+      global.window = { matchMedia: vi.fn().mockReturnValue({ matches: false }) };
+
       vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
-    });
+      const { showSummaryOverlay, removeSummaryOverlay } = await import('../../src/modules/overlay.js');
+      const mockStorage = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
+      await showSummaryOverlay('Test summary', 'digest_large', null, { value: true }, mockStorage);
 
-    it('uses CSS variable for font-size in summary content', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content[^}]*font-size:\s*var\(--summarizer-font-size/);
-    });
+      const escHandler = global.document.addEventListener.mock.calls.find(c => c[0] === 'keydown')?.[1];
+      expect(escHandler).toBeDefined();
 
-    it('uses CSS variable for line-height in summary content', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content[^}]*line-height:\s*var\(--summarizer-line-height/);
-    });
+      removeSummaryOverlay();
 
-    it('provides fallback values for CSS variables', () => {
-      // Fallback ensures styles work even if variables not set
-      expect(createdElement.textContent).toMatch(/--summarizer-font-size,\s*\d+px/);
-      expect(createdElement.textContent).toMatch(/--summarizer-line-height,\s*[\d.]+/);
-    });
-
-    it('sets overscroll-behavior contain on summary content to prevent scroll chaining', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*overscroll-behavior:\s*contain/);
-    });
-
-    it('uses !important on summary content font properties to prevent site overrides', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*font-size:[^}]*!important/);
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*line-height:[^}]*!important/);
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-content\s*\{[^}]*font-family:[^}]*!important/);
-    });
-  });
-
-  describe('Dark mode summary overlay CSS', () => {
-    let createdElement;
-
-    beforeEach(async () => {
-      createdElement = { id: '', textContent: '' };
-      global.document = {
-        getElementById: vi.fn().mockReturnValue(null),
-        createElement: vi.fn().mockReturnValue(createdElement),
-        head: { appendChild: vi.fn() }
-      };
-      vi.resetModules();
-      const { ensureCSS } = await import('../../src/modules/overlay.js');
-      ensureCSS();
-    });
-
-    it('sets light text color for dark mode summary content', () => {
-      // #e5e7eb is a light gray suitable for dark backgrounds
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-overlay\.summarizer-dark\s+\.summarizer-summary-content[^}]*color:\s*#e5e7eb/);
-    });
-
-    it('uses !important on dark mode text color to prevent site overrides', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-overlay\.summarizer-dark\s+\.summarizer-summary-content[^}]*color:[^}]*!important/);
-    });
-
-    it('sets dark background for dark mode summary overlay', () => {
-      expect(createdElement.textContent).toMatch(/\.summarizer-summary-overlay\.summarizer-dark[^.][^}]*background:/);
+      const removed = global.document.removeEventListener.mock.calls.find(c => c[0] === 'keydown')?.[1];
+      expect(removed).toBe(escHandler);
     });
   });
 });

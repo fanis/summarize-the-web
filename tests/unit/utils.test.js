@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { log, escapeHtml, parseLines, normalizeSpace, textTrim } from '../../src/modules/utils.js';
+import { log, escapeHtml, parseLines, normalizeSpace, textTrim, hashText, registerMenuCommand } from '../../src/modules/utils.js';
 
 describe('Utility Functions', () => {
   describe('log', () => {
@@ -120,6 +120,65 @@ describe('Utility Functions', () => {
 
     it('should handle normal text without extra spaces', () => {
       expect(normalizeSpace('hello world')).toBe('hello world');
+    });
+  });
+
+  describe('hashText', () => {
+    it('is deterministic', () => {
+      expect(hashText('hello world')).toBe(hashText('hello world'));
+    });
+
+    it('produces different hashes for different inputs', () => {
+      expect(hashText('hello world')).not.toBe(hashText('hello world!'));
+      expect(hashText('abc')).not.toBe(hashText('acb'));
+    });
+
+    it('returns a short base-36 string even for long inputs', () => {
+      const long = 'Lorem ipsum dolor sit amet. '.repeat(10000);
+      const hash = hashText(long);
+      expect(typeof hash).toBe('string');
+      expect(hash.length).toBeLessThanOrEqual(7);
+      expect(hash).toMatch(/^[0-9a-z]+$/);
+    });
+
+    it('handles empty string', () => {
+      expect(typeof hashText('')).toBe('string');
+    });
+
+    it('handles non-ASCII text', () => {
+      expect(hashText('Ελληνικά κείμενα')).not.toBe(hashText('Ελληνικά κείμενο'));
+    });
+  });
+
+  describe('registerMenuCommand', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('uses legacy GM_registerMenuCommand when available', () => {
+      const fn = () => {};
+      registerMenuCommand('Test', fn);
+      expect(global.GM_registerMenuCommand).toHaveBeenCalledWith('Test', fn);
+    });
+
+    it('falls back to GM.registerMenuCommand when legacy API is missing (Greasemonkey 4)', () => {
+      vi.stubGlobal('GM_registerMenuCommand', undefined);
+      const gmRegister = vi.fn();
+      vi.stubGlobal('GM', { registerMenuCommand: gmRegister });
+
+      const fn = () => {};
+      const result = registerMenuCommand('Test', fn);
+
+      expect(result).toBe(true);
+      expect(gmRegister).toHaveBeenCalledWith('Test', fn);
+    });
+
+    it('returns false without throwing when no menu API exists', () => {
+      vi.stubGlobal('GM_registerMenuCommand', undefined);
+      vi.stubGlobal('GM', undefined);
+
+      expect(() => registerMenuCommand('Test', () => {})).not.toThrow();
+      expect(registerMenuCommand('Test', () => {})).toBe(false);
     });
   });
 

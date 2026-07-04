@@ -2,7 +2,7 @@
  * UI overlay components for Summarize The Web
  */
 
-import { UI_ATTR, STORAGE_KEYS, SUMMARY_FONT_SIZES, SUMMARY_LINE_HEIGHTS, THEME_OPTIONS, DEFAULT_SHORTCUTS } from './config.js';
+import { UI_ATTR, STORAGE_KEYS, SUMMARY_FONT_SIZES, SUMMARY_LINE_HEIGHTS, DEFAULT_SHORTCUTS } from './config.js';
 import { escapeHtml, setHTML } from './utils.js';
 
 let overlay = null;
@@ -23,6 +23,8 @@ let scrollLocked = false;
 let storedOnDigest = null;
 let currentOverlayPos = null;
 let resizeHandlerRegistered = false;
+let documentClickRegistered = false;
+let summaryEscHandler = null;
 
 export const BADGE_WIDTH = 150;
 
@@ -33,6 +35,7 @@ function formatShortcut(shortcut) {
     if (!shortcut) return '';
     const parts = [];
     if (shortcut.ctrl) parts.push('Ctrl');
+    if (shortcut.meta) parts.push('Meta');
     if (shortcut.alt) parts.push('Alt');
     if (shortcut.shift) parts.push('Shift');
     parts.push(shortcut.key.toUpperCase());
@@ -40,14 +43,28 @@ function formatShortcut(shortcut) {
 }
 
 /**
+ * Derive a layout-independent key name from a keyboard event.
+ * event.key reflects the composed character, so on macOS Alt+Shift+L
+ * produces "Ò" and would never match a stored "L". Prefer event.code
+ * for letters and digits.
+ */
+export function eventKeyName(event) {
+    const code = event.code || '';
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+    if (/^Digit\d$/.test(code)) return code.slice(5);
+    return (event.key || '').toUpperCase();
+}
+
+/**
  * Check if a keyboard event matches a shortcut
  */
-function matchesShortcut(event, shortcut) {
+export function matchesShortcut(event, shortcut) {
     if (!shortcut) return false;
-    return event.key.toUpperCase() === shortcut.key.toUpperCase() &&
+    return eventKeyName(event) === shortcut.key.toUpperCase() &&
            event.altKey === shortcut.alt &&
            event.shiftKey === shortcut.shift &&
-           event.ctrlKey === shortcut.ctrl;
+           event.ctrlKey === shortcut.ctrl &&
+           event.metaKey === !!shortcut.meta;
 }
 
 /**
@@ -61,7 +78,8 @@ function parseShortcut(str) {
         key,
         ctrl: parts.includes('CTRL'),
         alt: parts.includes('ALT'),
-        shift: parts.includes('SHIFT')
+        shift: parts.includes('SHIFT'),
+        meta: parts.includes('META') || parts.includes('CMD')
     };
 }
 
@@ -519,7 +537,7 @@ export function getBadgeShadowCSS() {
 /**
  * Generate CSS for summary overlay shadow DOM
  */
-function getSummaryOverlayShadowCSS() {
+export function getSummaryOverlayShadowCSS() {
     return `
         :host {
             all: initial;
@@ -864,335 +882,6 @@ function syncBadgeSetting(setting, value) {
     });
 }
 
-/** Viewport width excluding scrollbar */
-function viewportWidth() {
-    return document.documentElement.clientWidth;
-}
-
-/**
- * Ensure CSS is loaded
- */
-export function ensureCSS() {
-    if (document.getElementById('summarizer-style')) return;
-    const style = document.createElement('style');
-    style.id = 'summarizer-style';
-    style.textContent = `
-        .summarizer-summary-overlay {
-            position: fixed !important;
-            top: 12px !important;
-            left: 50% !important;
-            transform: translateX(-50%) !important;
-            z-index: 2147483645 !important;
-            background: linear-gradient(135deg, #f8f9ff 0%, #fff5f7 100%) !important;
-            border: 3px solid #667eea !important;
-            border-radius: 16px !important;
-            width: 96% !important;
-            max-width: 760px !important;
-            max-height: 90vh !important;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35), 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
-            animation: summarizer-summary-fadein 0.3s ease !important;
-        }
-
-        @keyframes summarizer-summary-fadein {
-            from {
-                opacity: 0;
-                transform: translateX(-50%) translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(0);
-            }
-        }
-
-        .summarizer-summary-container {
-            padding: 0 !important;
-            box-sizing: border-box !important;
-        }
-
-        .summarizer-summary-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            padding: 16px 20px !important;
-            border-radius: 13px 13px 0 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-        }
-
-        .summarizer-summary-badge {
-            font: 600 16px/1.2 system-ui, sans-serif !important;
-            color: #fff !important;
-            display: flex !important;
-            align-items: center !important;
-            gap: 8px !important;
-        }
-
-        .summarizer-summary-close {
-            background: rgba(255, 255, 255, 0.2) !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            color: #fff !important;
-            font-size: 20px !important;
-            font-weight: 600 !important;
-            width: 32px !important;
-            height: 32px !important;
-            border-radius: 8px !important;
-            cursor: pointer !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            transition: all 0.2s !important;
-            padding: 0 !important;
-            line-height: 1 !important;
-        }
-
-        .summarizer-summary-close:hover {
-            background: rgba(255, 255, 255, 0.3) !important;
-            transform: scale(1.05) !important;
-        }
-
-        .summarizer-summary-content {
-            padding: 28px 40px !important;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-            font-size: var(--summarizer-font-size, 17px) !important;
-            line-height: var(--summarizer-line-height, 1.8) !important;
-            font-weight: 400 !important;
-            color: #2d3748 !important;
-            max-height: calc(90vh - 180px) !important;
-            overflow-y: auto !important;
-            overscroll-behavior: contain !important;
-        }
-
-        .summarizer-summary-content-inner {
-            max-width: 680px !important;
-            margin: 0 auto !important;
-        }
-
-        .summarizer-summary-content p {
-            margin: 0 0 1.25em 0 !important;
-            text-align: left !important;
-            word-spacing: 0.05em !important;
-            letter-spacing: 0.01em !important;
-            font-size: inherit !important;
-            line-height: inherit !important;
-            font-family: inherit !important;
-            font-weight: inherit !important;
-            color: inherit !important;
-        }
-
-        .summarizer-summary-content p:last-child {
-            margin-bottom: 0 !important;
-        }
-
-        .summarizer-summary-footer {
-            padding: 16px 20px !important;
-            background: rgba(102, 126, 234, 0.05) !important;
-            border-top: 1px solid rgba(102, 126, 234, 0.15) !important;
-            border-radius: 0 0 13px 13px !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            gap: 8px !important;
-        }
-
-        .summarizer-summary-footer-text {
-            font: 400 11px/1.2 system-ui, sans-serif !important;
-            color: #999 !important;
-            letter-spacing: 0.3px !important;
-        }
-
-        .summarizer-resummarize-btn {
-            background: rgba(255, 255, 255, 0.15) !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
-            color: rgba(255, 255, 255, 0.9) !important;
-            font: 400 12px/1.2 system-ui, sans-serif !important;
-            cursor: pointer !important;
-            height: 32px !important;
-            padding: 0 10px !important;
-            border-radius: 6px !important;
-            transition: all 0.2s !important;
-            margin-left: auto !important;
-            margin-right: 8px !important;
-            display: flex !important;
-            align-items: center !important;
-        }
-
-        .summarizer-resummarize-btn:hover {
-            background: rgba(255, 255, 255, 0.25) !important;
-            color: #fff !important;
-        }
-
-        .summarizer-summary-restore,
-        .summarizer-summary-close-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: #fff !important;
-            border: none !important;
-            padding: 12px 32px !important;
-            border-radius: 8px !important;
-            font: 600 14px/1.2 system-ui, sans-serif !important;
-            cursor: pointer !important;
-            transition: all 0.2s !important;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
-        }
-
-        .summarizer-summary-restore:hover,
-        .summarizer-summary-close-btn:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4) !important;
-        }
-
-        .summarizer-summary-header-controls {
-            display: flex !important;
-            align-items: center !important;
-            gap: 8px !important;
-        }
-
-        .summarizer-summary-settings {
-            position: relative !important;
-        }
-
-        .summarizer-summary-settings-btn {
-            background: rgba(255, 255, 255, 0.2) !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            color: #fff !important;
-            font-size: 18px !important;
-            width: 32px !important;
-            height: 32px !important;
-            border-radius: 8px !important;
-            cursor: pointer !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            transition: all 0.2s !important;
-            padding: 0 !important;
-            line-height: 1 !important;
-        }
-
-        .summarizer-summary-settings-btn:hover {
-            background: rgba(255, 255, 255, 0.3) !important;
-        }
-
-        .summarizer-summary-popover {
-            position: absolute !important;
-            top: 40px !important;
-            right: 0 !important;
-            min-width: 180px !important;
-            background: #fff !important;
-            border: 1px solid #e0e0e0 !important;
-            border-radius: 10px !important;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
-            padding: 16px !important;
-            z-index: 10 !important;
-            display: none !important;
-        }
-
-        .summarizer-summary-popover.open {
-            display: block !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-group {
-            margin-bottom: 14px !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-group:last-child {
-            margin-bottom: 0 !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-label {
-            font: 600 11px/1.2 system-ui, sans-serif !important;
-            color: #667eea !important;
-            margin: 0 0 8px 0 !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.5px !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-options {
-            display: flex !important;
-            gap: 4px !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-option {
-            flex: 1 !important;
-            padding: 6px 8px !important;
-            border: 1px solid #ddd !important;
-            background: #fff !important;
-            color: #666 !important;
-            border-radius: 6px !important;
-            cursor: pointer !important;
-            font: 500 12px/1.2 system-ui, sans-serif !important;
-            text-align: center !important;
-            transition: all 0.15s !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-option:hover {
-            border-color: #667eea !important;
-            color: #667eea !important;
-        }
-
-        .summarizer-summary-overlay .summarizer-settings-option.active {
-            background: #667eea !important;
-            border-color: #667eea !important;
-            color: #fff !important;
-        }
-
-        @keyframes summarizer-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-
-        .summarizer-summary-overlay.summarizer-dark {
-            background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
-            border-color: #4338ca !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-header {
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-content {
-            color: #e5e7eb !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer {
-            background: rgba(30, 27, 75, 0.3) !important;
-            border-top-color: rgba(99, 102, 241, 0.3) !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-footer-text {
-            color: #6b7280 !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-close-btn {
-            background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%) !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-summary-popover {
-            background: #1f2937 !important;
-            border-color: #374151 !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-label {
-            color: #a5b4fc !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option {
-            background: #374151 !important;
-            border-color: #4b5563 !important;
-            color: #d1d5db !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option:hover {
-            border-color: #6366f1 !important;
-            color: #a5b4fc !important;
-        }
-
-        .summarizer-summary-overlay.summarizer-dark .summarizer-settings-option.active {
-            background: #6366f1 !important;
-            border-color: #6366f1 !important;
-            color: #fff !important;
-        }
-    `;
-    document.head.appendChild(style);
-}
-
 const OVERLAY_ID = 'summarizer-overlay-singleton';
 
 const CREATION_LOCK_ATTR = 'data-summarizer-creating';
@@ -1225,8 +914,17 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     if (document.body.hasAttribute(CREATION_LOCK_ATTR)) return null;
     document.body.setAttribute(CREATION_LOCK_ATTR, 'true');
 
-    ensureCSS();
+    // Release the lock on every path: if a storage read below were to throw
+    // while the attribute is set, the overlay could never be created again
+    // on this page.
+    try {
+        return await buildOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors);
+    } finally {
+        document.body.removeAttribute(CREATION_LOCK_ATTR);
+    }
+}
 
+async function buildOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors) {
     // Load saved display settings
     const savedFontSize = await storage.get(STORAGE_KEYS.SUMMARY_FONT_SIZE) || 'default';
     const savedLineHeight = await storage.get(STORAGE_KEYS.SUMMARY_LINE_HEIGHT) || 'default';
@@ -1355,6 +1053,10 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     dragHandle.addEventListener('touchstart', (e) => startDrag(e, OVERLAY_COLLAPSED, OVERLAY_POS, storage));
 
     digestBtns.forEach(btn => {
+        // Keep any active text selection: without this, the mousedown into the
+        // badge collapses the selection (in Chrome at least) before the click
+        // handler gets a chance to read it for "summarize selection".
+        btn.addEventListener('mousedown', (e) => e.preventDefault());
         btn.addEventListener('click', () => {
             const size = btn.dataset.size;
             onDigest(size);
@@ -1402,13 +1104,21 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
         settingsPopover.classList.toggle('open');
     });
 
-    // Close popover when clicking outside (use composedPath to see through shadow DOM)
-    document.addEventListener('click', (e) => {
-        const path = e.composedPath();
-        if (!path.some(el => el.classList && el.classList.contains('summarizer-badge-settings'))) {
-            settingsPopover.classList.remove('open');
-        }
-    });
+    // Close popover when clicking outside (use composedPath to see through
+    // shadow DOM). Registered once for the page and resolved against the
+    // current shadow root, so SPA-driven overlay re-creations don't stack
+    // listeners that pin detached shadow trees in memory.
+    if (!documentClickRegistered) {
+        documentClickRegistered = true;
+        document.addEventListener('click', (e) => {
+            const popover = overlayShadow?.querySelector('.summarizer-settings-popover');
+            if (!popover) return;
+            const path = e.composedPath();
+            if (!path.some(el => el.classList && el.classList.contains('summarizer-badge-settings'))) {
+                popover.classList.remove('open');
+            }
+        });
+    }
 
     // Handle font size changes
     const fontSizeOptions = overlayShadow.querySelectorAll('[data-setting="fontSize"] .summarizer-settings-option');
@@ -1459,8 +1169,9 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
         });
     });
 
-    // Listen for system theme changes (for auto mode)
-    if (window.matchMedia) {
+    // Listen for system theme changes (for auto mode). Registered once per
+    // page; the handler reads module state, so re-creations need no rebind.
+    if (!mediaQueryList && window.matchMedia) {
         mediaQueryList = window.matchMedia('(prefers-color-scheme: dark)');
         const handleSystemThemeChange = () => {
             if (currentTheme === 'auto') {
@@ -1488,11 +1199,14 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
                 // Ignore modifier-only keys
                 if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
 
+                // Record via event.code so Alt-composed characters (macOS)
+                // don't end up as the stored key.
                 const shortcut = {
-                    key: e.key.toUpperCase(),
+                    key: eventKeyName(e),
                     ctrl: e.ctrlKey,
                     alt: e.altKey,
-                    shift: e.shiftKey
+                    shift: e.shiftKey,
+                    meta: e.metaKey
                 };
 
                 const shortcutStr = formatShortcut(shortcut);
@@ -1546,7 +1260,6 @@ export async function createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onD
     };
     document.addEventListener('keydown', keyboardHandler);
 
-    document.body.removeAttribute(CREATION_LOCK_ATTR);
     return overlay;
 }
 
@@ -1721,7 +1434,7 @@ function unlockBodyScroll() {
 /**
  * Show summary overlay (uses Shadow DOM for CSS isolation)
  */
-export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, onRestore, storage) {
+export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_COLLAPSED, storage) {
     removeSummaryOverlay();
 
     // Auto-collapse actions overlay on mobile to prevent overlap
@@ -1818,16 +1531,11 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
 
     const closeHandler = () => {
         removeSummaryOverlay();
-        if (!isSelectedText) onRestore();
+        updateOverlayStatus('ready');
     };
 
-    if (isSelectedText) {
-        closeBtn.addEventListener('click', removeSummaryOverlay);
-        closeBtnFooter.addEventListener('click', removeSummaryOverlay);
-    } else {
-        closeBtn.addEventListener('click', closeHandler);
-        closeBtnFooter.addEventListener('click', closeHandler);
-    }
+    closeBtn.addEventListener('click', closeHandler);
+    closeBtnFooter.addEventListener('click', closeHandler);
 
     // Re-summarize button
     const resummarizeBtn = summaryOverlayShadow.querySelector('.summarizer-resummarize-btn');
@@ -1904,30 +1612,23 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     // Close overlay when clicking the backdrop (the inner overlay element itself, not the container)
     innerOverlay.addEventListener('click', (e) => {
         if (e.target === innerOverlay) {
-            if (isSelectedText) {
-                removeSummaryOverlay();
-            } else {
-                closeHandler();
-            }
+            closeHandler();
         }
     });
 
-    const escHandler = (e) => {
+    // Tracked at module level so removeSummaryOverlay() can unregister it on
+    // every close path (buttons, backdrop, re-summarize) — not just Escape.
+    summaryEscHandler = (e) => {
         if (e.key === 'Escape') {
             // Close popover first if open
             if (settingsPopover.classList.contains('open')) {
                 settingsPopover.classList.remove('open');
                 return;
             }
-            if (isSelectedText) {
-                removeSummaryOverlay();
-            } else {
-                closeHandler();
-            }
-            document.removeEventListener('keydown', escHandler);
+            closeHandler();
         }
     };
-    document.addEventListener('keydown', escHandler);
+    document.addEventListener('keydown', summaryEscHandler);
 }
 
 /**
@@ -1935,6 +1636,10 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
  */
 export function removeSummaryOverlay() {
     unlockBodyScroll();
+    if (summaryEscHandler) {
+        document.removeEventListener('keydown', summaryEscHandler);
+        summaryEscHandler = null;
+    }
     if (summaryOverlay && summaryOverlay.isConnected) {
         summaryOverlay.remove();
     }
@@ -1989,11 +1694,4 @@ export function ensureOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest,
     if (!overlay || !overlay.isConnected) {
         createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, onDigest, onInspect, onSummaryHighlight, onEditSelectors);
     }
-}
-
-/**
- * Get current overlay reference
- */
-export function getOverlay() {
-    return overlay;
 }
