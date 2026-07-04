@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.7.0] - 2026-07-04
 
 ### Fixed
 - **Greasemonkey compatibility**: menu commands were registered via bare `GM_registerMenuCommand?.()`, which throws a ReferenceError on Greasemonkey 4 (the legacy function is not declared there) and killed the whole script. Menu registration now goes through a guarded helper with a `GM.registerMenuCommand` fallback, and the metadata block grants `GM.registerMenuCommand`.
