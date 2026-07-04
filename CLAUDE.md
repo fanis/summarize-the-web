@@ -79,7 +79,15 @@ Core modules in `src/modules/`:
 
 ## Release Checklist
 
-Before creating a new release:
+**Preferred: remote release via GitHub Actions.** The `Cut Release` workflow (`.github/workflows/cut-release.yml`, `workflow_dispatch`) does the entire checklist below automatically: it bumps the version in `package.json`, `src/banner.txt` and `README.md`, converts the `## [Unreleased]` section of `CHANGELOG.md` into the new version, runs `npm run test:all`, builds, commits, tags, and publishes the GitHub release with the built script attached. It requires a `## [Unreleased]` section in `CHANGELOG.md` — keep release notes accumulating there as changes land. Trigger it with a version bump type (`patch`/`minor`/`major`) or an explicit version:
+
+```bash
+gh workflow run cut-release.yml -f bump=minor
+```
+
+From Claude Code sessions with GitHub MCP access, trigger it with the `actions_run_trigger` tool on `cut-release.yml`.
+
+**Manual release** (if not using the workflow):
 
 1. Update version in both files:
    - `package.json` version field
@@ -101,7 +109,7 @@ Before creating a new release:
    git push origin X.Y.Z
    ```
 
-The GitHub Actions workflow (`.github/workflows/release.yml`) automatically creates a release with the changelog and attaches the built script.
+The GitHub Actions workflow (`.github/workflows/release.yml`) automatically creates a release with the changelog and attaches the built script when a tag is pushed manually. (Tags pushed by `cut-release.yml` don't re-trigger it; that workflow creates the release itself.)
 
 ## Documentation Style
 
@@ -111,3 +119,4 @@ When writing code blocks with commands that IDEs can detect and run, put comment
 
 - Only run build and tests when actual code is edited (src/*, tests/*), not for documentation-only changes (README, CHANGELOG, etc.)
 - Git push to GitHub requires manual execution for authentication - remind user to push
+- Never add AI attribution anywhere: no `Co-Authored-By: Claude`, no `Claude-Session:`/session links, and no "Generated with Claude Code" footers in commit messages, PR titles/descriptions, release notes, or code comments
