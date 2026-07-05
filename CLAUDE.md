@@ -120,3 +120,4 @@ When writing code blocks with commands that IDEs can detect and run, put comment
 - Only run build and tests when actual code is edited (src/*, tests/*), not for documentation-only changes (README, CHANGELOG, etc.)
 - Git push to GitHub requires manual execution for authentication - remind user to push
 - Never add AI attribution anywhere: no `Co-Authored-By: Claude`, no `Claude-Session:`/session links, and no "Generated with Claude Code" footers in commit messages, PR titles/descriptions, release notes, or code comments
+- **Never commit a rebuilt `dist/summarize-the-web.js` in development branches/PRs.** Greasy Fork syncs the published script from that file on `master` via a push webhook, so it must only change in release commits (the `Cut Release` workflow builds and commits it). Run `npm run build` locally to verify changes, but leave `dist/` out of commits.
