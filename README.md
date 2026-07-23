@@ -16,7 +16,8 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 - **Keyboard Shortcuts**: Configurable hotkeys for quick summarization (default: Alt+Shift+L/S)
 - **Show Included Elements**: Highlight which page elements would be included in a summary
 - **Element Inspection Mode**: Diagnostic tool to troubleshoot why elements are/aren't being detected
-- **Configurable Selectors**: Global + per-domain CSS selector configuration for article containers
+- **Configurable Selectors**: Global + per-domain CSS selector configuration for article containers, with built-in defaults for popular platforms (WordPress/Elementor/Divi/tagDiv, Ghost, Substack, Drupal, Shopify)
+- **Automatic Article Detection Fallback**: When no selector matches, the densest block of text on the page is detected and used as the article container
 - **Caching**: Previously generated summaries are cached to save API costs
 - **Customizable Prompts**: Modify the AI prompts to suit your needs
 - **Simplification Styles**: Choose from Conservative, Balanced, or Aggressive simplification
