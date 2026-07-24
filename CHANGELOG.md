@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.8.0] - 2026-07-24
 
 ### Added
 - **Text-density fallback for article detection**: when no configured selector matches anything usable (unrecognized themes, div-soup page builders), the script now guesses the article container by finding the tightest element holding at least 80% of the page's paragraph/list/quote text (navigation, header, footer and sidebar text is ignored). Pages like wired.com.gr (Elementor, no `<article>`/`<main>` and no standard content classes) now work out of the box.

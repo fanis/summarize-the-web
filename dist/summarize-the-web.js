@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.7.0
+// @version      2.8.0
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -175,6 +175,21 @@
         '.entry-content',
         '[class*="article-content"]',
         ':is(div, section, article)[class*="post-body"]',
+        // WordPress page builders / themes
+        '.elementor-widget-theme-post-content',
+        '.wp-block-post-content',
+        '.td-post-content',
+        '[class*="et_pb_post_content"]',
+        // Ghost (Casper and derived themes)
+        '.gh-content',
+        '.post-full-content',
+        // Substack
+        '.available-content',
+        // Drupal 8+
+        '.field--name-body',
+        // Shopify blogs (Dawn and BEM-style themes)
+        '.article-template__content',
+        '.article__content',
         // Greek news sites
         '[class*="articleContainer"] .cnt',
         '[class*="articleContainer"]',
@@ -2027,15 +2042,78 @@
         return (clone.innerText ?? clone.textContent ?? '').trim();
     }
 
+    // Text blocks counted by the density fallback. Only leaf blocks are counted
+    // (a blockquote wrapping a <p> is skipped in favor of the <p>) so nested
+    // structures don't inflate totals.
+    const TEXT_BLOCK_SELECTOR = 'p, li, blockquote, pre';
+
+    /**
+     * Guess the article container by text density, for pages where no configured
+     * selector matches (unrecognized themes, div-soup page builders). Sums the
+     * length of every leaf text block into each of its ancestors, then descends
+     * from <body> to the deepest element that still holds at least 80% of that
+     * text — the tightest wrapper around the main body of the page.
+     * @param {number} minLength - Minimum total block text required to guess
+     * @param {number} [bodyLength] - Page text length, for the percent stat
+     * @returns {Object|null} - Candidate entry { candidate, selector, length, percent }
+     *   with selector set to '(auto-detected)', or null if there isn't enough text
+     */
+    function guessArticleContainer(minLength = 100, bodyLength = 0) {
+        if (!bodyLength) {
+            bodyLength = (document.body.innerText ?? document.body.textContent ?? '').trim().length || 1;
+        }
+
+        const totals = new Map();
+        let counted = 0;
+
+        for (const block of document.querySelectorAll(TEXT_BLOCK_SELECTOR)) {
+            if (block.querySelector(TEXT_BLOCK_SELECTOR)) continue;
+            if (block.closest(`nav, aside, header, footer, [${UI_ATTR}]`)) continue;
+
+            const len = (block.innerText ?? block.textContent ?? '').trim().length;
+            // Ignore stubs (menu items, buttons, captions)
+            if (len < 25) continue;
+
+            counted += len;
+            for (let anc = block.parentElement; anc && anc !== document.documentElement; anc = anc.parentElement) {
+                totals.set(anc, (totals.get(anc) || 0) + len);
+            }
+        }
+
+        if (counted < minLength) return null;
+
+        let container = document.body;
+        let descended = true;
+        while (descended) {
+            descended = false;
+            for (const child of container.children) {
+                if ((totals.get(child) || 0) >= counted * 0.8) {
+                    container = child;
+                    descended = true;
+                    break;
+                }
+            }
+        }
+
+        const rawText = (container.innerText ?? container.textContent ?? '').trim();
+        return {
+            candidate: container,
+            selector: '(auto-detected)',
+            length: rawText.length,
+            percent: Math.round((rawText.length / bodyLength) * 100)
+        };
+    }
+
     /**
      * Find and rank article container candidates. Shared by extraction and the
      * summary-highlight inspection view so the dominance heuristic lives in one
-     * place.
+     * place. Falls back to a text-density guess when no selector matches
+     * anything usable.
      * @param {string[]} SELECTORS - CSS selectors to find containers
      * @param {number} minLength - Minimum text length for a significant container
      * @returns {Object|null} - { selected, candidates } where selected holds one
      *   entry (single container) or several (non-nested containers to combine),
-     *   or null when no selector matched anything.
+     *   or null when no selector matched and the density fallback found nothing.
      */
     function selectContainers(SELECTORS, minLength = 100) {
         // Get total page text for comparison
@@ -2058,11 +2136,23 @@
             }
         }
 
-        if (candidates.length === 0) return null;
+        if (candidates.length === 0) {
+            const guess = guessArticleContainer(minLength, bodyLength);
+            return guess ? { selected: [guess], candidates: [guess] } : null;
+        }
 
         // Sort by text length descending
         candidates.sort((a, b) => b.length - a.length);
         const best = candidates[0];
+
+        // Every configured match is below the minimum (e.g. an empty <article>
+        // teaser) — a density guess that finds more text is a better bet.
+        if (best.length < minLength) {
+            const guess = guessArticleContainer(minLength, bodyLength);
+            if (guess && guess.length > best.length) {
+                return { selected: [guess], candidates: [guess, ...candidates] };
+            }
+        }
 
         // Check if one container is dominant (>70% of page, and next best is <50% of best)
         const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
