@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { extractArticleBody, getTextToDigest, isExcluded, getSelectedText } from '../../src/modules/extraction.js';
+import { extractArticleBody, getTextToDigest, isExcluded, getSelectedText, guessArticleContainer } from '../../src/modules/extraction.js';
 import { DEFAULT_SELECTORS, DEFAULT_EXCLUDES, DEFAULT_MIN_TEXT_LENGTH } from '../../src/modules/config.js';
 import { createTestDOM } from '../setup.js';
 
@@ -452,6 +452,60 @@ describe('Extraction Module', () => {
         expect(result.text).not.toContain('Site Footer');
       });
 
+      it('should extract from Elementor theme-builder structure', () => {
+        createTestDOM(`
+          <div class="elementor elementor-location-single post-10590 article">
+            <div class="elementor-widget elementor-widget-theme-post-content">
+              <p>${ARTICLE_TEXT}</p>
+            </div>
+          </div>
+        `);
+
+        const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
+
+        expect(result.error).toBeUndefined();
+        expect(result.text).toContain('sample article');
+      });
+
+      it('should extract from WordPress block theme structure', () => {
+        createTestDOM(`
+          <div class="wp-block-post-content is-layout-constrained">
+            <p>${ARTICLE_TEXT}</p>
+          </div>
+        `);
+
+        const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
+
+        expect(result.error).toBeUndefined();
+        expect(result.text).toContain('sample article');
+      });
+
+      it('should extract from Ghost (Casper) structure', () => {
+        createTestDOM(`
+          <section class="gh-content gh-canvas">
+            <p>${ARTICLE_TEXT}</p>
+          </section>
+        `);
+
+        const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
+
+        expect(result.error).toBeUndefined();
+        expect(result.text).toContain('sample article');
+      });
+
+      it('should extract from tagDiv Newspaper structure', () => {
+        createTestDOM(`
+          <div class="td-post-content tagdiv-type">
+            <p>${ARTICLE_TEXT}</p>
+          </div>
+        `);
+
+        const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
+
+        expect(result.error).toBeUndefined();
+        expect(result.text).toContain('sample article');
+      });
+
       it('should extract from blog post structure', () => {
         createTestDOM(`
           <div class="post-content">
@@ -469,6 +523,102 @@ describe('Extraction Module', () => {
         expect(result.error).toBeUndefined();
         expect(result.text).toContain('Blog Post Title');
         expect(result.text).not.toContain('Reader comment');
+      });
+    });
+
+    describe('text-density fallback', () => {
+      it('should extract from unrecognized div-soup markup', () => {
+        createTestDOM(`
+          <div class="x-theme-wrapper">
+            <div class="x-theme-content">
+              <p>${ARTICLE_TEXT}</p>
+              <p>${ARTICLE_TEXT}</p>
+            </div>
+          </div>
+        `);
+
+        const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
+
+        expect(result.error).toBeUndefined();
+        expect(result.text).toContain('sample article');
+      });
+
+      it('should kick in when selectors only match a near-empty container', () => {
+        createTestDOM(`
+          <article>Teaser stub</article>
+          <div class="x-real-content">
+            <p>${ARTICLE_TEXT}</p>
+            <p>${ARTICLE_TEXT}</p>
+          </div>
+        `);
+
+        const result = extractArticleBody(DEFAULT_SELECTORS, DEFAULT_EXCLUDES);
+
+        expect(result.error).toBeUndefined();
+        expect(result.text).toContain('sample article');
+        expect(result.text).not.toContain('Teaser stub');
+      });
+
+      it('should ignore text inside nav, header, footer and aside', () => {
+        const chrome = 'Menu item text long enough to be counted as a text block on its own.';
+        createTestDOM(`
+          <nav><p>${chrome}</p><p>${chrome}</p></nav>
+          <div class="x-content"><p>${ARTICLE_TEXT}</p></div>
+          <footer><p>${chrome}</p><p>${chrome}</p></footer>
+        `);
+
+        const guess = guessArticleContainer(100);
+
+        expect(guess).not.toBeNull();
+        expect(guess.candidate.className).toBe('x-content');
+        expect(guess.selector).toBe('(auto-detected)');
+      });
+
+      it('should pick the tightest wrapper holding most of the text', () => {
+        createTestDOM(`
+          <div id="outer">
+            <div id="inner">
+              <p>${ARTICLE_TEXT}</p>
+              <p>${ARTICLE_TEXT}</p>
+            </div>
+            <div><p>A short trailing note that is long enough to count.</p></div>
+          </div>
+        `);
+
+        const guess = guessArticleContainer(100);
+
+        expect(guess).not.toBeNull();
+        expect(guess.candidate.id).toBe('inner');
+      });
+
+      it('should count nested text blocks once and descend to the tightest wrapper', () => {
+        createTestDOM(`
+          <div class="x-content">
+            <blockquote><p>${ARTICLE_TEXT}</p></blockquote>
+          </div>
+        `);
+
+        const guess = guessArticleContainer(100);
+
+        expect(guess).not.toBeNull();
+        // Only the leaf <p> is counted; the blockquote wrapping it holds
+        // 100% of the counted text and is the deepest such element.
+        expect(guess.candidate.tagName).toBe('BLOCKQUOTE');
+        expect(guess.length).toBe(ARTICLE_TEXT.length);
+      });
+
+      it('should still report no_container when the page has no substantial text blocks', () => {
+        createTestDOM('<div>Random content without paragraphs</div>');
+
+        const result = extractArticleBody(['.nonexistent'], { self: [], ancestors: [] });
+
+        expect(result.error).toBe('no_container');
+      });
+
+      it('should return null when text blocks total less than minLength', () => {
+        createTestDOM('<div><p>Just one short paragraph of text here.</p></div>');
+
+        expect(guessArticleContainer(500)).toBeNull();
       });
     });
 

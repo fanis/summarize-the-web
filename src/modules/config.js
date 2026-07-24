@@ -142,6 +142,21 @@ export const DEFAULT_SELECTORS = [
     '.entry-content',
     '[class*="article-content"]',
     ':is(div, section, article)[class*="post-body"]',
+    // WordPress page builders / themes
+    '.elementor-widget-theme-post-content',
+    '.wp-block-post-content',
+    '.td-post-content',
+    '[class*="et_pb_post_content"]',
+    // Ghost (Casper and derived themes)
+    '.gh-content',
+    '.post-full-content',
+    // Substack
+    '.available-content',
+    // Drupal 8+
+    '.field--name-body',
+    // Shopify blogs (Dawn and BEM-style themes)
+    '.article-template__content',
+    '.article__content',
     // Greek news sites
     '[class*="articleContainer"] .cnt',
     '[class*="articleContainer"]',
