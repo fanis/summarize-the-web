@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.9.0
+// @version      2.9.1
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -1549,9 +1549,10 @@
     function openModelSelectionDialog(storage, currentModel, onSelect) {
         const css = `
         .wrap{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);
-              display:flex;align-items:center;justify-content:center}
+              display:flex;align-items:center;justify-content:center;overflow-y:auto}
         .modal{background:#fff;max-width:600px;width:90%;border-radius:12px;
-               box-shadow:0 10px 40px rgba(0,0,0,.3);padding:24px;box-sizing:border-box}
+               box-shadow:0 10px 40px rgba(0,0,0,.3);padding:24px;box-sizing:border-box;
+               margin:20px;max-height:90vh;overflow-y:auto}
         h3{margin:0 0 8px;font:600 18px/1.2 system-ui,sans-serif;color:#1a1a1a}
         .subtitle{margin:0 0 20px;font:13px/1.4 system-ui,sans-serif;color:#666}
         .option{padding:16px;margin:10px 0;border:2px solid #e0e0e0;border-radius:8px;
