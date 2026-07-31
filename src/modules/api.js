@@ -2,7 +2,7 @@
  * OpenAI API functions for Summarize The Web
  */
 
-import { CFG, MODEL_OPTIONS, STORAGE_KEYS, DEFAULT_PRICING, STYLE_INSTRUCTIONS, MAX_OUTPUT_TOKENS } from './config.js';
+import { CFG, MODEL_OPTIONS, CUSTOM_MODEL_ID, REASONING_EFFORTS, STORAGE_KEYS, DEFAULT_PRICING, STYLE_INSTRUCTIONS, MAX_OUTPUT_TOKENS } from './config.js';
 import { log } from './utils.js';
 
 // API token usage tracking
@@ -13,14 +13,42 @@ export let API_TOKENS = {
 // API Pricing configuration
 export let PRICING = { ...DEFAULT_PRICING };
 
+// Set to the stored model id when the user's saved selection no longer exists
+// in MODEL_OPTIONS, so the UI can notify them about the fallback
+export let MODEL_FALLBACK = '';
+
+/**
+ * Build a MODEL_OPTIONS entry from a user-defined model definition
+ */
+export function buildCustomModelOption(def) {
+    return {
+        name: `Custom (${def.apiModel})`,
+        apiModel: def.apiModel,
+        description: 'User-defined model and pricing',
+        inputPer1M: def.inputPer1M,
+        outputPer1M: def.outputPer1M,
+        recommended: false,
+        priority: !!def.priority,
+        reasoning: REASONING_EFFORTS.includes(def.reasoning) ? def.reasoning : '',
+        custom: true
+    };
+}
+
+function isValidCustomModelDef(def) {
+    return def && typeof def.apiModel === 'string' && def.apiModel.trim() !== '' &&
+        Number.isFinite(def.inputPer1M) && def.inputPer1M >= 0 &&
+        Number.isFinite(def.outputPer1M) && def.outputPer1M >= 0;
+}
+
 /**
  * Initialize API tracking from storage
  */
 export async function initApiTracking(storage) {
-    const [tokensRaw, pricingRaw, modelRaw] = await Promise.all([
+    const [tokensRaw, pricingRaw, modelRaw, customRaw] = await Promise.all([
         storage.get(STORAGE_KEYS.API_TOKENS, ''),
         storage.get(STORAGE_KEYS.PRICING, ''),
-        storage.get(STORAGE_KEYS.MODEL, '')
+        storage.get(STORAGE_KEYS.MODEL, ''),
+        storage.get(STORAGE_KEYS.CUSTOM_MODEL, '')
     ]);
 
     try {
@@ -31,13 +59,31 @@ export async function initApiTracking(storage) {
         if (pricingRaw) PRICING = JSON.parse(pricingRaw);
     } catch {}
 
-    // Apply saved model preference
-    if (modelRaw && MODEL_OPTIONS[modelRaw]) {
-        CFG.model = modelRaw;
-        PRICING.model = modelRaw;
-        PRICING.inputPer1M = MODEL_OPTIONS[modelRaw].inputPer1M;
-        PRICING.outputPer1M = MODEL_OPTIONS[modelRaw].outputPer1M;
+    // Register the user-defined custom model, if configured
+    try {
+        if (customRaw) {
+            const def = JSON.parse(customRaw);
+            if (isValidCustomModelDef(def)) {
+                MODEL_OPTIONS[CUSTOM_MODEL_ID] = buildCustomModelOption(def);
+            }
+        }
+    } catch {}
+
+    // Apply saved model preference; fall back to the default model when the
+    // stored selection no longer exists in MODEL_OPTIONS (flagging it via
+    // MODEL_FALLBACK), and keep PRICING in sync with the active model
+    let modelId = CFG.model;
+    if (modelRaw) {
+        if (MODEL_OPTIONS[modelRaw]) {
+            modelId = modelRaw;
+        } else {
+            MODEL_FALLBACK = modelRaw;
+        }
     }
+    CFG.model = modelId;
+    PRICING.model = modelId;
+    PRICING.inputPer1M = MODEL_OPTIONS[modelId].inputPer1M;
+    PRICING.outputPer1M = MODEL_OPTIONS[modelId].outputPer1M;
 }
 
 /**
@@ -242,8 +288,15 @@ export async function digestText(storage, text, mode, prompt, styleLevel, cacheG
         input: safeInput
     };
 
-    // GPT-5 models are reasoning models - minimize reasoning for summarization
-    if (apiModelName.startsWith('gpt-5')) {
+    // Reasoning effort: custom models use their configured value (empty means
+    // send no reasoning parameter); built-in GPT-5 models are reasoning models,
+    // so minimize reasoning for summarization
+    const modelOption = MODEL_OPTIONS[CFG.model];
+    if (modelOption?.custom) {
+        if (modelOption.reasoning) {
+            requestBody.reasoning = { effort: modelOption.reasoning };
+        }
+    } else if (apiModelName.startsWith('gpt-5')) {
         requestBody.reasoning = { effort: 'minimal' };
     }
 

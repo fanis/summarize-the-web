@@ -2,12 +2,12 @@ import { CFG, STORAGE_KEYS, MODEL_OPTIONS, DEFAULT_SELECTORS, DEFAULT_EXCLUDES, 
 import { log, registerMenuCommand } from './modules/utils.js';
 import { Storage } from './modules/storage.js';
 import { domainPatternToRegex, listMatchesHost } from './modules/selectors.js';
-import { initApiTracking, digestText, friendlyApiError, resetApiTokens, PRICING } from './modules/api.js';
+import { initApiTracking, digestText, friendlyApiError, resetApiTokens, PRICING, MODEL_FALLBACK } from './modules/api.js';
 import { DigestCache } from './modules/cache.js';
 import {
     openInfo, openKeyDialog, openApiKeyEditor, openWelcomeDialog,
     openSimplificationStyleDialog, openModelSelectionDialog, openCustomPromptDialog,
-    showStats, openDomainEditor, openSelectorEditor
+    showStats, openDomainEditor, openSelectorEditor, showToast
 } from './modules/settings.js';
 import { enterInspectionMode, showSummaryHighlight, exitSummaryHighlight } from './modules/inspection.js';
 import { getTextToDigest } from './modules/extraction.js';
@@ -438,6 +438,19 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     // Create overlay
     createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
+
+    // Notify users whose saved model was removed from MODEL_OPTIONS. Persisting
+    // the fallback via setModel makes this a one-time notice.
+    if (MODEL_FALLBACK) {
+        await setModel(CFG.model);
+        showToast(
+            `Your selected AI model (${MODEL_FALLBACK}) is no longer offered. Switched to ${MODEL_OPTIONS[CFG.model].name}.`,
+            {
+                actionLabel: 'Model settings',
+                onAction: () => openModelSelectionDialog(storage, CFG.model, setModel)
+            }
+        );
+    }
 
     // Auto-simplify if enabled
     if (AUTO_SIMPLIFY) {
