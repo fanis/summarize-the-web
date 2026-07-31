@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.9.0] - 2026-07-31
 
 ### Added
 - **Custom model**: the model selection dialog now includes a "Custom model" option where you can enter any OpenAI model ID with your own input/output prices per 1M tokens, a reasoning effort (minimal/low/medium/high, or the model default), and an optional Fast mode flag. Cost statistics use the prices you enter.
