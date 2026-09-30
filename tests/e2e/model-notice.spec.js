@@ -92,6 +92,18 @@ test.describe('Model change notice', () => {
     expect(text).toContain('GPT-5.6 Terra Fast');
   });
 
+  test('fresh install saves the default model at once so a key added later triggers no notice', async ({ page }) => {
+    await loadWithStorage(page, { 'digest_installed_v1': '', 'OPENAI_KEY': '' });
+    expect(await page.evaluate(() => window.__saved['digest_model_v1'])).toBe('gpt-6-luna');
+    expect(await toastText(page)).toBeNull();
+  });
+
+  test('legacy user on a disabled domain keeps the notice pending for an active page', async ({ page }) => {
+    await loadWithStorage(page, { 'digest_domains_mode_v1': 'allow', 'digest_domains_enabled_v1': '[]' });
+    expect(await toastText(page)).toBeNull();
+    expect(await page.evaluate(() => window.__saved['digest_model_v1'])).toBeUndefined();
+  });
+
   test('user whose model is still offered sees no notice', async ({ page }) => {
     await loadWithStorage(page, { 'digest_model_v1': 'gpt-6.1-sol' });
     expect(await toastText(page)).toBeNull();

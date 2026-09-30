@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- New installs of 2.10.0 could see a wrong "Your model (GPT-5 Nano) is no longer available" notice after adding their API key: the default model was only saved on an active page, so the empty selection was taken for the pre-2.10 default. The default model is now saved at startup when there is no notice to show.
+
 ## [2.10.0] - 2026-09-30
 
 ### Fixed

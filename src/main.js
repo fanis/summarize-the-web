@@ -69,6 +69,12 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         initApiTracking(storage)
     ]);
 
+    // Save an unsaved model at once when there is nothing to tell the user
+    // (fresh install). Otherwise the first-install and no-key early returns
+    // below skip saving, and once a key is added the empty selection would be
+    // taken for the legacy default and trigger a wrong 'switched' notice.
+    if (MODEL_UNSAVED && !MODEL_NOTICE) await setModel(CFG.model);
+
     // Debug toggle
     if (debugRaw !== '') CFG.DEBUG = (debugRaw === true || debugRaw === 'true');
 
@@ -439,10 +445,10 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     // Create overlay
     createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
 
-    // Save the active model when it was never saved or was just replaced, so a
-    // 'switched' notice shows only once and later default changes do not move
-    // users silently
-    if (MODEL_UNSAVED) await setModel(CFG.model);
+    // Save the replacement model together with showing the 'switched' notice
+    // (not earlier), so users on disabled domains still see it on their next
+    // active page and it shows only once
+    if (MODEL_UNSAVED && MODEL_NOTICE) await setModel(CFG.model);
 
     // One-time notice for users whose model changed or whose custom model was
     // retired; it stays until closed and links to the model settings
