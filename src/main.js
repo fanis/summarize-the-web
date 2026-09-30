@@ -2,7 +2,7 @@ import { CFG, STORAGE_KEYS, MODEL_OPTIONS, DEFAULT_SELECTORS, DEFAULT_EXCLUDES, 
 import { log, registerMenuCommand } from './modules/utils.js';
 import { Storage } from './modules/storage.js';
 import { domainPatternToRegex, listMatchesHost } from './modules/selectors.js';
-import { initApiTracking, digestText, friendlyApiError, resetApiTokens, PRICING, MODEL_FALLBACK } from './modules/api.js';
+import { initApiTracking, digestText, friendlyApiError, resetApiTokens, PRICING, MODEL_NOTICE, MODEL_UNSAVED } from './modules/api.js';
 import { DigestCache } from './modules/cache.js';
 import {
     openInfo, openKeyDialog, openApiKeyEditor, openWelcomeDialog,
@@ -439,17 +439,27 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     // Create overlay
     createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
 
-    // Notify users whose saved model was removed from MODEL_OPTIONS. Persisting
-    // the fallback via setModel makes this a one-time notice.
-    if (MODEL_FALLBACK) {
-        await setModel(CFG.model);
-        showToast(
-            `Your selected AI model (${MODEL_FALLBACK}) is no longer offered. Switched to ${MODEL_OPTIONS[CFG.model].name}.`,
-            {
-                actionLabel: 'Model settings',
-                onAction: () => openModelSelectionDialog(storage, CFG.model, setModel)
-            }
-        );
+    // Save the active model when it was never saved or was just replaced, so a
+    // 'switched' notice shows only once and later default changes do not move
+    // users silently
+    if (MODEL_UNSAVED) await setModel(CFG.model);
+
+    // One-time notice for users whose model changed or whose custom model was
+    // retired; it stays until closed and links to the model settings
+    if (MODEL_NOTICE) {
+        let message;
+        if (MODEL_NOTICE.type === 'custom-retired') {
+            await storage.set(STORAGE_KEYS.RETIRED_NOTICE, MODEL_NOTICE.apiModel);
+            const date = new Date(`${MODEL_NOTICE.retiredOn}T00:00:00Z`).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+            message = `AI models have been updated. OpenAI retired ${MODEL_NOTICE.apiModel}, the model used by your custom model setting, on ${date}, so summaries will fail. Please choose another model.`;
+        } else {
+            message = `AI models have been updated. Your model (${MODEL_NOTICE.fromName}) is no longer available, so the script switched you to ${MODEL_OPTIONS[CFG.model].name}. You can choose another model in the model settings.`;
+        }
+        showToast(message, {
+            actionLabel: 'Model settings',
+            onAction: () => openModelSelectionDialog(storage, CFG.model, setModel),
+            timeoutMs: 0
+        });
     }
 
     // Auto-simplify if enabled

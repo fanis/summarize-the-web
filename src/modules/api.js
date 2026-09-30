@@ -2,7 +2,7 @@
  * OpenAI API functions for Summarize The Web
  */
 
-import { CFG, MODEL_OPTIONS, CUSTOM_MODEL_ID, REASONING_EFFORTS, STORAGE_KEYS, DEFAULT_PRICING, STYLE_INSTRUCTIONS, MAX_OUTPUT_TOKENS } from './config.js';
+import { CFG, MODEL_OPTIONS, CUSTOM_MODEL_ID, REASONING_EFFORTS, REMOVED_MODEL_NAMES, LEGACY_DEFAULT_MODEL, RETIRED_API_MODELS, STORAGE_KEYS, DEFAULT_PRICING, STYLE_INSTRUCTIONS, MAX_OUTPUT_TOKENS } from './config.js';
 import { log } from './utils.js';
 
 // API token usage tracking
@@ -13,9 +13,16 @@ export let API_TOKENS = {
 // API Pricing configuration
 export let PRICING = { ...DEFAULT_PRICING };
 
-// Set to the stored model id when the user's saved selection no longer exists
-// in MODEL_OPTIONS, so the UI can notify them about the fallback
-export let MODEL_FALLBACK = '';
+// One-time model notice for the UI, set by initApiTracking:
+//   { type: 'switched', fromName }            saved model no longer offered;
+//                                             CFG.model holds the replacement
+//   { type: 'custom-retired', apiModel, retiredOn }
+//                                             active custom model shut down by OpenAI
+export let MODEL_NOTICE = null;
+
+// True when the active model must be saved: nothing was saved yet, or the saved
+// model was replaced. Saving it makes the 'switched' notice one-time.
+export let MODEL_UNSAVED = false;
 
 /**
  * Build a MODEL_OPTIONS entry from a user-defined model definition
@@ -42,13 +49,16 @@ function isValidCustomModelDef(def) {
 
 /**
  * Initialize API tracking from storage
+ * @param {Date} today - current date (injectable for tests)
  */
-export async function initApiTracking(storage) {
-    const [tokensRaw, pricingRaw, modelRaw, customRaw] = await Promise.all([
+export async function initApiTracking(storage, today = new Date()) {
+    const [tokensRaw, pricingRaw, modelRaw, customRaw, keyRaw, retiredNoticeRaw] = await Promise.all([
         storage.get(STORAGE_KEYS.API_TOKENS, ''),
         storage.get(STORAGE_KEYS.PRICING, ''),
         storage.get(STORAGE_KEYS.MODEL, ''),
-        storage.get(STORAGE_KEYS.CUSTOM_MODEL, '')
+        storage.get(STORAGE_KEYS.CUSTOM_MODEL, ''),
+        storage.get(STORAGE_KEYS.OPENAI_KEY, ''),
+        storage.get(STORAGE_KEYS.RETIRED_NOTICE, '')
     ]);
 
     try {
@@ -69,17 +79,30 @@ export async function initApiTracking(storage) {
         }
     } catch {}
 
-    // Apply saved model preference; fall back to the default model when the
-    // stored selection no longer exists in MODEL_OPTIONS (flagging it via
-    // MODEL_FALLBACK), and keep PRICING in sync with the active model
+    // Apply saved model preference. An existing user (API key set) with no saved
+    // model was on the legacy default. When the previous model is no longer
+    // offered, fall back to the default model and flag a 'switched' notice.
     let modelId = CFG.model;
-    if (modelRaw) {
-        if (MODEL_OPTIONS[modelRaw]) {
-            modelId = modelRaw;
+    const previous = modelRaw || (keyRaw ? LEGACY_DEFAULT_MODEL : '');
+    if (previous) {
+        if (MODEL_OPTIONS[previous]) {
+            modelId = previous;
         } else {
-            MODEL_FALLBACK = modelRaw;
+            MODEL_NOTICE = { type: 'switched', fromName: REMOVED_MODEL_NAMES[previous] || previous };
         }
     }
+    MODEL_UNSAVED = modelRaw !== modelId;
+
+    // Flag an active custom model whose API model OpenAI has shut down, once per
+    // retired model ID (the user must pick a replacement themselves)
+    if (modelId === CUSTOM_MODEL_ID) {
+        const apiModel = MODEL_OPTIONS[CUSTOM_MODEL_ID].apiModel;
+        const retiredOn = RETIRED_API_MODELS[apiModel];
+        if (retiredOn && today.toISOString().slice(0, 10) >= retiredOn && retiredNoticeRaw !== apiModel) {
+            MODEL_NOTICE = { type: 'custom-retired', apiModel, retiredOn };
+        }
+    }
+
     CFG.model = modelId;
     PRICING.model = modelId;
     PRICING.inputPer1M = MODEL_OPTIONS[modelId].inputPer1M;
@@ -288,20 +311,15 @@ export async function digestText(storage, text, mode, prompt, styleLevel, cacheG
         input: safeInput
     };
 
-    // Reasoning effort: custom models use their configured value (empty means
-    // send no reasoning parameter); built-in GPT-5 models are reasoning models,
-    // so minimize reasoning for summarization
+    // Reasoning effort comes from the model entry (valid values differ per
+    // model family); empty means send no reasoning parameter
     const modelOption = MODEL_OPTIONS[CFG.model];
-    if (modelOption?.custom) {
-        if (modelOption.reasoning) {
-            requestBody.reasoning = { effort: modelOption.reasoning };
-        }
-    } else if (apiModelName.startsWith('gpt-5')) {
-        requestBody.reasoning = { effort: 'minimal' };
+    if (modelOption?.reasoning) {
+        requestBody.reasoning = { effort: modelOption.reasoning };
     }
 
     // Add service_tier for priority models
-    if (MODEL_OPTIONS[CFG.model]?.priority) {
+    if (modelOption?.priority) {
         requestBody.service_tier = 'priority';
     }
 

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- GPT-5.6 Luna and GPT-5.6 Terra Fast failed on every request with HTTP 400: the script sent `reasoning.effort: minimal`, which GPT-5.6 models reject (they accept none/low/medium/high/xhigh/max). Both presets are replaced by the GPT-6 lineup below; custom models can use GPT-5.6 with a supported effort.
+
+### Changed
+- **Model lineup moved to GPT-6** (pricing source: OpenAI pricing docs, 2026-09-30). OpenAI shuts down `gpt-4.1-nano` on 2026-10-23 and the only `gpt-5-nano` and `gpt-5-mini` snapshots on 2026-12-11.
+  - New default: GPT-6 Luna ($0.10/$0.50 per 1M tokens). In a comparison on English and Greek articles it made no factual errors, while GPT-5 Nano changed a dosage figure, invented a year, paraphrased direct quotes and made Greek grammar errors. It costs about 1.6x GPT-5 Nano per summary.
+  - Added GPT-6 Luna Fast ($0.20/$1.00) and GPT-6.1 Sol ($2.00/$10.00)
+  - Removed GPT-5 Nano, GPT-5.6 Luna, GPT-4.1 Nano Fast, GPT-5 Mini Fast and GPT-5.6 Terra Fast. Users with a removed model selected are switched to GPT-6 Luna (for GPT-5 Nano users this is a small price increase, since no cheaper model remains).
+- **Model change notice**: every user whose model changes gets a one-time notice that names the old model and the new one, with a link to the model settings. This now includes users who never chose a model and were on the old GPT-5 Nano default. The notice stays until closed.
+- **Retired custom model notice**: when OpenAI shuts down the model behind an active custom model (currently `gpt-4.1-nano` on 2026-10-23, `gpt-5-nano` and `gpt-5-mini` on 2026-12-11), the user gets a one-time notice asking them to choose another model. The custom model is not changed automatically.
+- The active model is now always saved, so a future change of the default model no longer moves users silently
+- Each built-in model now sends its own reasoning effort (`low` for all presets) instead of a `gpt-5` model-name rule
+- Custom model reasoning effort options now include none, extra high (xhigh) and max
+
 ## [2.9.1] - 2026-07-31
 
 ### Fixed

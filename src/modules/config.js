@@ -3,7 +3,7 @@
  */
 
 export const CFG = {
-    model: 'gpt-5-nano',
+    model: 'gpt-6-luna',
     DEBUG: false,
 };
 
@@ -11,55 +11,43 @@ export const UI_ATTR = 'data-digest-ui';
 export const LOG_PREFIX = '[summarize-the-web]';
 
 // Available models with pricing
-// Pricing source: https://developers.openai.com/api/docs/pricing (as of 2026-07-31)
+// Pricing source: https://developers.openai.com/api/docs/pricing (as of 2026-09-30)
 // Note: OpenAI renamed "priority processing" to "Fast mode" on 2026-07-30;
-// service_tier "priority" remains a valid API alias. Storage keys below keep
-// the -priority suffix so existing user selections are preserved.
+// service_tier "priority" remains a valid API alias. Fast model IDs keep the
+// -priority suffix for consistency with stored selections.
+// reasoning: the reasoning.effort sent with every request. Valid values differ
+// per model family (GPT-5.6/GPT-6 reject 'minimal', GPT-6.1 Sol also rejects
+// 'none'), so each entry names its own; '' sends no reasoning parameter.
 export const MODEL_OPTIONS = {
-    'gpt-5-nano': {
-        name: 'GPT-5 Nano',
-        apiModel: 'gpt-5-nano',
-        description: 'Ultra-affordable - Best value for most articles',
-        inputPer1M: 0.05,
-        outputPer1M: 0.40,
+    'gpt-6-luna': {
+        name: 'GPT-6 Luna',
+        apiModel: 'gpt-6-luna',
+        description: 'Low cost - Best value for most articles',
+        inputPer1M: 0.10,
+        outputPer1M: 0.50,
         recommended: true,
-        priority: false
+        priority: false,
+        reasoning: 'low'
     },
-    'gpt-5.6-luna': {
-        name: 'GPT-5.6 Luna',
-        apiModel: 'gpt-5.6-luna',
-        description: 'Newest generation at low cost - Quality step up from Nano',
+    'gpt-6-luna-priority': {
+        name: 'GPT-6 Luna Fast',
+        apiModel: 'gpt-6-luna',
+        description: 'Same model with faster processing',
         inputPer1M: 0.20,
-        outputPer1M: 1.20,
+        outputPer1M: 1.00,
         recommended: false,
-        priority: false
+        priority: true,
+        reasoning: 'low'
     },
-    'gpt-4.1-nano-priority': {
-        name: 'GPT-4.1 Nano Fast',
-        apiModel: 'gpt-4.1-nano',
-        description: 'Cheapest fast-processing option (older generation)',
-        inputPer1M: 0.20,
-        outputPer1M: 0.80,
+    'gpt-6.1-sol': {
+        name: 'GPT-6.1 Sol',
+        apiModel: 'gpt-6.1-sol',
+        description: 'Higher quality - Keeps quotes and details more faithfully (about 20x the cost of Luna)',
+        inputPer1M: 2.00,
+        outputPer1M: 10.00,
         recommended: false,
-        priority: true
-    },
-    'gpt-5-mini-priority': {
-        name: 'GPT-5 Mini Fast',
-        apiModel: 'gpt-5-mini',
-        description: 'Better quality + faster processing',
-        inputPer1M: 0.45,
-        outputPer1M: 3.60,
-        recommended: false,
-        priority: true
-    },
-    'gpt-5.6-terra-priority': {
-        name: 'GPT-5.6 Terra Fast',
-        apiModel: 'gpt-5.6-terra',
-        description: 'Newest flagship tier + faster processing (most expensive)',
-        inputPer1M: 4.00,
-        outputPer1M: 24.00,
-        recommended: false,
-        priority: true
+        priority: false,
+        reasoning: 'low'
     }
 };
 
@@ -67,7 +55,39 @@ export const MODEL_OPTIONS = {
 export const CUSTOM_MODEL_ID = 'custom';
 
 // Valid reasoning effort values for the custom model definition
-export const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
+// ('minimal' is for original GPT-5 models; newer models use 'none' instead)
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+// Display names for model IDs that earlier versions offered, so the model
+// change notice can name the user's previous model
+export const REMOVED_MODEL_NAMES = {
+    'gpt-5-nano': 'GPT-5 Nano',
+    'gpt-5-mini': 'GPT-5 Mini',
+    'gpt-5.2-priority': 'GPT-5.2 Priority',
+    'gpt-5.6-luna': 'GPT-5.6 Luna',
+    'gpt-4.1-nano-priority': 'GPT-4.1 Nano Fast',
+    'gpt-5-mini-priority': 'GPT-5 Mini Fast',
+    'gpt-5.6-terra-priority': 'GPT-5.6 Terra Fast',
+    [CUSTOM_MODEL_ID]: 'your custom model'
+};
+
+// Default model of versions up to 2.9.x. Those versions did not save the
+// default selection, so an existing user with no saved model was using this one.
+export const LEGACY_DEFAULT_MODEL = 'gpt-5-nano';
+
+// OpenAI API model IDs with announced shutdown dates
+// (https://developers.openai.com/api/docs/deprecations). An active custom model
+// using one of them gets a one-time notice once the date has passed.
+// gpt-5-nano and gpt-5-mini: OpenAI announced the shutdown of their 2025-08-07
+// snapshots, which are the only snapshots behind those aliases.
+export const RETIRED_API_MODELS = {
+    'gpt-4.1-nano': '2026-10-23',
+    'gpt-4.1-nano-2025-04-14': '2026-10-23',
+    'gpt-5-nano': '2026-12-11',
+    'gpt-5-nano-2025-08-07': '2026-12-11',
+    'gpt-5-mini': '2026-12-11',
+    'gpt-5-mini-2025-08-07': '2026-12-11'
+};
 
 // Storage keys
 export const STORAGE_KEYS = {
@@ -87,6 +107,7 @@ export const STORAGE_KEYS = {
     PRICING: 'digest_pricing_v1',
     CACHE: 'digest_cache_v2',
     MODEL: 'digest_model_v1',
+    RETIRED_NOTICE: 'digest_retired_notice_v1',
     // Article extraction selectors
     SELECTORS_GLOBAL: 'digest_selectors_v1',
     EXCLUDES_GLOBAL: 'digest_excludes_v1',
@@ -190,10 +211,10 @@ export const DEFAULT_EXCLUDES = {
 
 // Default API pricing
 export const DEFAULT_PRICING = {
-    model: 'gpt-5-nano',
-    inputPer1M: 0.05,
-    outputPer1M: 0.40,
-    lastUpdated: '2026-07-31',
+    model: 'gpt-6-luna',
+    inputPer1M: 0.10,
+    outputPer1M: 0.50,
+    lastUpdated: '2026-09-30',
     source: 'https://developers.openai.com/api/docs/pricing'
 };
 

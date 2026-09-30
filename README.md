@@ -10,7 +10,7 @@ A userscript that summarizes and simplifies web articles using the OpenAI API. G
 
 - **Two Summary Sizes**: Choose between Large (50%) or Small (20%) summaries
 - **Works with Articles & Selected Text**: Summarize entire articles or just highlight specific text
-- **AI Model Selection**: Choose from 5 different OpenAI models (GPT-5.6, GPT-5, GPT-4.1) with different pricing and quality levels, or define a custom model ID with your own pricing
+- **AI Model Selection**: Choose from 3 OpenAI GPT-6 presets (GPT-6 Luna, GPT-6 Luna Fast, GPT-6.1 Sol) with different pricing and quality levels, or define a custom model ID with your own pricing
 - **Display Settings**: Configurable font size and line spacing for comfortable reading
 - **Dark Mode**: Light/Dark/Auto themes following system preference
 - **Keyboard Shortcuts**: Configurable hotkeys for quick summarization (default: Alt+Shift+L/S)
@@ -196,26 +196,24 @@ You can customize the AI prompts for both Large and Small summaries via the user
 
 ### AI Model Selection
 
-Choose from 5 different OpenAI models based on your needs and budget:
+Choose from 3 OpenAI models based on your needs and budget:
 
 **Regular Tier:**
-- **GPT-5 Nano** (Recommended) - $0.05/$0.40 per 1M tokens - Ultra-affordable, best value
-- **GPT-5.6 Luna** - $0.20/$1.20 per 1M tokens - Newest generation at low cost
+- **GPT-6 Luna** (Recommended) - $0.10/$0.50 per 1M tokens - Low cost, best value for most articles
+- **GPT-6.1 Sol** - $2.00/$10.00 per 1M tokens - Higher quality, keeps quotes and details more faithfully
 
 **Fast Tier (Faster Processing):**
-- **GPT-4.1 Nano Fast** - $0.20/$0.80 per 1M tokens - Cheapest fast option (older generation)
-- **GPT-5 Mini Fast** - $0.45/$3.60 per 1M tokens - Better quality + faster
-- **GPT-5.6 Terra Fast** - $4.00/$24.00 per 1M tokens - Newest flagship tier + faster
+- **GPT-6 Luna Fast** - $0.20/$1.00 per 1M tokens - Same model as GPT-6 Luna with faster processing
 
-**Custom model:** the model selection dialog also lets you enter any OpenAI model ID with your own input/output prices per 1M tokens, a reasoning effort (minimal/low/medium/high, or the model default), and an optional Fast mode flag, for models not in the list above. Cost statistics use the prices you enter.
+**Custom model:** the model selection dialog also lets you enter any OpenAI model ID with your own input/output prices per 1M tokens, a reasoning effort (none/minimal/low/medium/high/extra high/max, or the model default), and an optional Fast mode flag, for models not in the list above. Supported reasoning effort values differ per model: GPT-5.6 and GPT-6 models reject `minimal`, the original GPT-5 models reject `none`. Cost statistics use the prices you enter.
 
-If a previously selected model is removed from the list in a later version, the script falls back to the default GPT-5 Nano and shows a one-time notice with a link to the model settings.
+If a previously selected model is removed from the list in a later version, the script falls back to the default GPT-6 Luna and shows a one-time notice with a link to the model settings. If OpenAI shuts down the model behind your custom model, a one-time notice asks you to choose another model.
 
 Access model selection via the userscript menu. Changing models clears the cache and reloads the page.
 
 ## API Usage & Costs
 
-The script defaults to OpenAI's `gpt-5-nano` model (ultra-affordable at $0.05/$0.40 per 1M tokens), but you can select from 5 built-in models or define a custom one. You can view your usage statistics including:
+The script defaults to OpenAI's `gpt-6-luna` model (low cost at $0.10/$0.50 per 1M tokens), but you can select from 3 built-in models or define a custom one. You can view your usage statistics including:
 - Total API calls
 - Token usage (input/output)
 - Estimated cost based on current pricing

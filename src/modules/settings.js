@@ -230,7 +230,7 @@ export function openWelcomeDialog(storage) {
                 </ol>
             </div>
             <p style="font-size:13px;color:#666;margin-top:16px"><strong>Domain control:</strong> By default, all websites are disabled. After setup, you can enable websites one by one via the menu.</p>
-            <p style="font-size:13px;color:#666">The script uses GPT-5 Nano (cost-effective). Your key is stored locally and never shared.</p>
+            <p style="font-size:13px;color:#666">The script uses GPT-6 Luna (cost-effective) by default. Your key is stored locally and never shared.</p>
             <div class="actions">
                 <button class="btn secondary cancel">Maybe Later</button>
                 <button class="btn primary continue">Set Up API Key</button>
@@ -338,6 +338,17 @@ export function openSimplificationStyleDialog(storage, currentLevel, setSimplifi
     shadow.querySelector('.btn-cancel').addEventListener('click', close);
 }
 
+// Display labels for the custom model's reasoning effort options
+const REASONING_LABELS = {
+    none: 'None',
+    minimal: 'Minimal (original GPT-5 models only)',
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High',
+    xhigh: 'Extra high',
+    max: 'Max'
+};
+
 /**
  * Show model selection dialog
  */
@@ -418,7 +429,7 @@ export function openModelSelectionDialog(storage, currentModel, onSelect) {
                         <option value="">Model default (no parameter sent)</option>
                         ${REASONING_EFFORTS.map(effort => `
                             <option value="${effort}" ${custom && custom.reasoning === effort ? 'selected' : ''}>
-                                ${effort.charAt(0).toUpperCase() + effort.slice(1)}
+                                ${REASONING_LABELS[effort]}
                             </option>
                         `).join('')}
                     </select>
@@ -532,7 +543,8 @@ export function showToast(message, { actionLabel, onAction, timeoutMs = 15000 } 
 
     shadow.append(style, div);
     document.body.appendChild(host);
-    setTimeout(dismiss, timeoutMs);
+    // timeoutMs 0 keeps the toast until the user closes it
+    if (timeoutMs > 0) setTimeout(dismiss, timeoutMs);
 }
 
 /**

@@ -1,0 +1,112 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+/**
+ * Tests for the one-time model change notice (built script, real startup)
+ */
+
+const userscriptPath = join(process.cwd(), 'dist', 'summarize-the-web.js');
+
+function getScriptContent() {
+  const content = readFileSync(userscriptPath, 'utf-8');
+  const endMeta = content.indexOf('==/UserScript==');
+  return endMeta === -1 ? content : content.slice(endMeta + '==/UserScript=='.length);
+}
+
+// GM API mocks backed by the given storage values; writes are recorded in
+// window.__saved so tests can check what the script persisted
+function gmMocks(storage) {
+  return `
+    const mockStorage = ${JSON.stringify({
+      'digest_installed_v1': 'true',
+      'OPENAI_KEY': 'test-api-key',
+      'digest_domains_mode_v1': 'deny',
+      'digest_domains_excluded_v1': '[]',
+      ...storage
+    })};
+    window.__saved = {};
+    const get = (key, def) => mockStorage[key] !== undefined ? mockStorage[key] : def;
+    const set = (key, value) => { mockStorage[key] = value; window.__saved[key] = value; };
+    window.GM_getValue = get;
+    window.GM_setValue = set;
+    window.GM_deleteValue = () => {};
+    window.GM_registerMenuCommand = () => {};
+    window.GM_xmlhttpRequest = () => {};
+    window.GM = {
+      getValue: async (key, def) => get(key, def),
+      setValue: async (key, value) => set(key, value),
+      deleteValue: async () => {},
+      xmlHttpRequest: () => {}
+    };
+  `;
+}
+
+async function loadWithStorage(page, storage) {
+  await page.setContent('<!DOCTYPE html><html><head><title>Test</title></head><body><article><p>Content</p></article></body></html>');
+  await page.addScriptTag({ content: gmMocks(storage) });
+  await page.addScriptTag({ content: getScriptContent() });
+  await page.waitForTimeout(500);
+}
+
+// Text of the toast inside its shadow root, or null when none is shown
+function toastText(page) {
+  return page.evaluate(() => {
+    for (const host of document.querySelectorAll('[data-digest-ui]')) {
+      const toast = host.shadowRoot?.querySelector('.toast');
+      if (toast) return toast.textContent;
+    }
+    return null;
+  });
+}
+
+test.describe('Model change notice', () => {
+  test('existing user on the old default is told about the switch and can open model settings', async ({ page }, testInfo) => {
+    await loadWithStorage(page, {});
+    const text = await toastText(page);
+    expect(text).toContain('AI models have been updated');
+    expect(text).toContain('GPT-5 Nano');
+    expect(text).toContain('switched you to GPT-6 Luna');
+    expect(text).toContain('Model settings');
+    expect(await page.evaluate(() => window.__saved['digest_model_v1'])).toBe('gpt-6-luna');
+
+    await page.screenshot({ path: testInfo.outputPath('model-notice.png') });
+
+    // The link opens the model selection dialog and closes the toast
+    await page.evaluate(() => {
+      for (const host of document.querySelectorAll('[data-digest-ui]')) {
+        host.shadowRoot?.querySelector('.toast a')?.click();
+      }
+    });
+    await page.waitForTimeout(200);
+    expect(await toastText(page)).toBeNull();
+    const dialogOpen = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-digest-ui]')].some(h => h.shadowRoot?.textContent.includes('AI Model Selection')));
+    expect(dialogOpen).toBe(true);
+  });
+
+  test('toast stays open until closed', async ({ page }) => {
+    await loadWithStorage(page, { 'digest_model_v1': 'gpt-5.6-terra-priority' });
+    await page.waitForTimeout(16000);
+    const text = await toastText(page);
+    expect(text).toContain('GPT-5.6 Terra Fast');
+  });
+
+  test('user whose model is still offered sees no notice', async ({ page }) => {
+    await loadWithStorage(page, { 'digest_model_v1': 'gpt-6.1-sol' });
+    expect(await toastText(page)).toBeNull();
+  });
+
+  test('active custom model retired by OpenAI asks the user to choose another model', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-12-12T12:00:00Z'));
+    await loadWithStorage(page, {
+      'digest_model_v1': 'custom',
+      'digest_custom_model_v1': JSON.stringify({ apiModel: 'gpt-5-nano', inputPer1M: 0.05, outputPer1M: 0.4, priority: false, reasoning: 'minimal' })
+    });
+    const text = await toastText(page);
+    expect(text).toContain('OpenAI retired gpt-5-nano');
+    expect(text).toContain('Please choose another model');
+    expect(await page.evaluate(() => window.__saved['digest_retired_notice_v1'])).toBe('gpt-5-nano');
+    expect(await page.evaluate(() => window.__saved['digest_model_v1'])).toBeUndefined();
+  });
+});
