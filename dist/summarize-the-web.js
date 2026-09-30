@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.9.1
+// @version      2.10.0
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -39,7 +39,7 @@
      */
 
     const CFG = {
-        model: 'gpt-5-nano',
+        model: 'gpt-6-luna',
         DEBUG: false,
     };
 
@@ -47,55 +47,43 @@
     const LOG_PREFIX = '[summarize-the-web]';
 
     // Available models with pricing
-    // Pricing source: https://developers.openai.com/api/docs/pricing (as of 2026-07-31)
+    // Pricing source: https://developers.openai.com/api/docs/pricing (as of 2026-09-30)
     // Note: OpenAI renamed "priority processing" to "Fast mode" on 2026-07-30;
-    // service_tier "priority" remains a valid API alias. Storage keys below keep
-    // the -priority suffix so existing user selections are preserved.
+    // service_tier "priority" remains a valid API alias. Fast model IDs keep the
+    // -priority suffix for consistency with stored selections.
+    // reasoning: the reasoning.effort sent with every request. Valid values differ
+    // per model family (GPT-5.6/GPT-6 reject 'minimal', GPT-6.1 Sol also rejects
+    // 'none'), so each entry names its own; '' sends no reasoning parameter.
     const MODEL_OPTIONS = {
-        'gpt-5-nano': {
-            name: 'GPT-5 Nano',
-            apiModel: 'gpt-5-nano',
-            description: 'Ultra-affordable - Best value for most articles',
-            inputPer1M: 0.05,
-            outputPer1M: 0.40,
+        'gpt-6-luna': {
+            name: 'GPT-6 Luna',
+            apiModel: 'gpt-6-luna',
+            description: 'Low cost - Best value for most articles',
+            inputPer1M: 0.10,
+            outputPer1M: 0.50,
             recommended: true,
-            priority: false
+            priority: false,
+            reasoning: 'low'
         },
-        'gpt-5.6-luna': {
-            name: 'GPT-5.6 Luna',
-            apiModel: 'gpt-5.6-luna',
-            description: 'Newest generation at low cost - Quality step up from Nano',
+        'gpt-6-luna-priority': {
+            name: 'GPT-6 Luna Fast',
+            apiModel: 'gpt-6-luna',
+            description: 'Same model with faster processing',
             inputPer1M: 0.20,
-            outputPer1M: 1.20,
+            outputPer1M: 1.00,
             recommended: false,
-            priority: false
+            priority: true,
+            reasoning: 'low'
         },
-        'gpt-4.1-nano-priority': {
-            name: 'GPT-4.1 Nano Fast',
-            apiModel: 'gpt-4.1-nano',
-            description: 'Cheapest fast-processing option (older generation)',
-            inputPer1M: 0.20,
-            outputPer1M: 0.80,
+        'gpt-6.1-sol': {
+            name: 'GPT-6.1 Sol',
+            apiModel: 'gpt-6.1-sol',
+            description: 'Higher quality - Keeps quotes and details more faithfully (about 20x the cost of Luna)',
+            inputPer1M: 2.00,
+            outputPer1M: 10.00,
             recommended: false,
-            priority: true
-        },
-        'gpt-5-mini-priority': {
-            name: 'GPT-5 Mini Fast',
-            apiModel: 'gpt-5-mini',
-            description: 'Better quality + faster processing',
-            inputPer1M: 0.45,
-            outputPer1M: 3.60,
-            recommended: false,
-            priority: true
-        },
-        'gpt-5.6-terra-priority': {
-            name: 'GPT-5.6 Terra Fast',
-            apiModel: 'gpt-5.6-terra',
-            description: 'Newest flagship tier + faster processing (most expensive)',
-            inputPer1M: 4.00,
-            outputPer1M: 24.00,
-            recommended: false,
-            priority: true
+            priority: false,
+            reasoning: 'low'
         }
     };
 
@@ -103,7 +91,39 @@
     const CUSTOM_MODEL_ID = 'custom';
 
     // Valid reasoning effort values for the custom model definition
-    const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
+    // ('minimal' is for original GPT-5 models; newer models use 'none' instead)
+    const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+    // Display names for model IDs that earlier versions offered, so the model
+    // change notice can name the user's previous model
+    const REMOVED_MODEL_NAMES = {
+        'gpt-5-nano': 'GPT-5 Nano',
+        'gpt-5-mini': 'GPT-5 Mini',
+        'gpt-5.2-priority': 'GPT-5.2 Priority',
+        'gpt-5.6-luna': 'GPT-5.6 Luna',
+        'gpt-4.1-nano-priority': 'GPT-4.1 Nano Fast',
+        'gpt-5-mini-priority': 'GPT-5 Mini Fast',
+        'gpt-5.6-terra-priority': 'GPT-5.6 Terra Fast',
+        [CUSTOM_MODEL_ID]: 'your custom model'
+    };
+
+    // Default model of versions up to 2.9.x. Those versions did not save the
+    // default selection, so an existing user with no saved model was using this one.
+    const LEGACY_DEFAULT_MODEL = 'gpt-5-nano';
+
+    // OpenAI API model IDs with announced shutdown dates
+    // (https://developers.openai.com/api/docs/deprecations). An active custom model
+    // using one of them gets a one-time notice once the date has passed.
+    // gpt-5-nano and gpt-5-mini: OpenAI announced the shutdown of their 2025-08-07
+    // snapshots, which are the only snapshots behind those aliases.
+    const RETIRED_API_MODELS = {
+        'gpt-4.1-nano': '2026-10-23',
+        'gpt-4.1-nano-2025-04-14': '2026-10-23',
+        'gpt-5-nano': '2026-12-11',
+        'gpt-5-nano-2025-08-07': '2026-12-11',
+        'gpt-5-mini': '2026-12-11',
+        'gpt-5-mini-2025-08-07': '2026-12-11'
+    };
 
     // Storage keys
     const STORAGE_KEYS = {
@@ -123,6 +143,7 @@
         PRICING: 'digest_pricing_v1',
         CACHE: 'digest_cache_v2',
         MODEL: 'digest_model_v1',
+        RETIRED_NOTICE: 'digest_retired_notice_v1',
         // Article extraction selectors
         SELECTORS_GLOBAL: 'digest_selectors_v1',
         EXCLUDES_GLOBAL: 'digest_excludes_v1',
@@ -223,10 +244,10 @@
 
     // Default API pricing
     const DEFAULT_PRICING = {
-        model: 'gpt-5-nano',
-        inputPer1M: 0.05,
-        outputPer1M: 0.40,
-        lastUpdated: '2026-07-31',
+        model: 'gpt-6-luna',
+        inputPer1M: 0.10,
+        outputPer1M: 0.50,
+        lastUpdated: '2026-09-30',
         source: 'https://developers.openai.com/api/docs/pricing'
     };
 
@@ -696,9 +717,16 @@
     // API Pricing configuration
     let PRICING = { ...DEFAULT_PRICING };
 
-    // Set to the stored model id when the user's saved selection no longer exists
-    // in MODEL_OPTIONS, so the UI can notify them about the fallback
-    let MODEL_FALLBACK = '';
+    // One-time model notice for the UI, set by initApiTracking:
+    //   { type: 'switched', fromName }            saved model no longer offered;
+    //                                             CFG.model holds the replacement
+    //   { type: 'custom-retired', apiModel, retiredOn }
+    //                                             active custom model shut down by OpenAI
+    let MODEL_NOTICE = null;
+
+    // True when the active model must be saved: nothing was saved yet, or the saved
+    // model was replaced. Saving it makes the 'switched' notice one-time.
+    let MODEL_UNSAVED = false;
 
     /**
      * Build a MODEL_OPTIONS entry from a user-defined model definition
@@ -725,13 +753,16 @@
 
     /**
      * Initialize API tracking from storage
+     * @param {Date} today - current date (injectable for tests)
      */
-    async function initApiTracking(storage) {
-        const [tokensRaw, pricingRaw, modelRaw, customRaw] = await Promise.all([
+    async function initApiTracking(storage, today = new Date()) {
+        const [tokensRaw, pricingRaw, modelRaw, customRaw, keyRaw, retiredNoticeRaw] = await Promise.all([
             storage.get(STORAGE_KEYS.API_TOKENS, ''),
             storage.get(STORAGE_KEYS.PRICING, ''),
             storage.get(STORAGE_KEYS.MODEL, ''),
-            storage.get(STORAGE_KEYS.CUSTOM_MODEL, '')
+            storage.get(STORAGE_KEYS.CUSTOM_MODEL, ''),
+            storage.get(STORAGE_KEYS.OPENAI_KEY, ''),
+            storage.get(STORAGE_KEYS.RETIRED_NOTICE, '')
         ]);
 
         try {
@@ -752,17 +783,30 @@
             }
         } catch {}
 
-        // Apply saved model preference; fall back to the default model when the
-        // stored selection no longer exists in MODEL_OPTIONS (flagging it via
-        // MODEL_FALLBACK), and keep PRICING in sync with the active model
+        // Apply saved model preference. An existing user (API key set) with no saved
+        // model was on the legacy default. When the previous model is no longer
+        // offered, fall back to the default model and flag a 'switched' notice.
         let modelId = CFG.model;
-        if (modelRaw) {
-            if (MODEL_OPTIONS[modelRaw]) {
-                modelId = modelRaw;
+        const previous = modelRaw || (keyRaw ? LEGACY_DEFAULT_MODEL : '');
+        if (previous) {
+            if (MODEL_OPTIONS[previous]) {
+                modelId = previous;
             } else {
-                MODEL_FALLBACK = modelRaw;
+                MODEL_NOTICE = { type: 'switched', fromName: REMOVED_MODEL_NAMES[previous] || previous };
             }
         }
+        MODEL_UNSAVED = modelRaw !== modelId;
+
+        // Flag an active custom model whose API model OpenAI has shut down, once per
+        // retired model ID (the user must pick a replacement themselves)
+        if (modelId === CUSTOM_MODEL_ID) {
+            const apiModel = MODEL_OPTIONS[CUSTOM_MODEL_ID].apiModel;
+            const retiredOn = RETIRED_API_MODELS[apiModel];
+            if (retiredOn && today.toISOString().slice(0, 10) >= retiredOn && retiredNoticeRaw !== apiModel) {
+                MODEL_NOTICE = { type: 'custom-retired', apiModel, retiredOn };
+            }
+        }
+
         CFG.model = modelId;
         PRICING.model = modelId;
         PRICING.inputPer1M = MODEL_OPTIONS[modelId].inputPer1M;
@@ -953,20 +997,15 @@
             input: safeInput
         };
 
-        // Reasoning effort: custom models use their configured value (empty means
-        // send no reasoning parameter); built-in GPT-5 models are reasoning models,
-        // so minimize reasoning for summarization
+        // Reasoning effort comes from the model entry (valid values differ per
+        // model family); empty means send no reasoning parameter
         const modelOption = MODEL_OPTIONS[CFG.model];
-        if (modelOption?.custom) {
-            if (modelOption.reasoning) {
-                requestBody.reasoning = { effort: modelOption.reasoning };
-            }
-        } else if (apiModelName.startsWith('gpt-5')) {
-            requestBody.reasoning = { effort: 'minimal' };
+        if (modelOption?.reasoning) {
+            requestBody.reasoning = { effort: modelOption.reasoning };
         }
 
         // Add service_tier for priority models
-        if (MODEL_OPTIONS[CFG.model]?.priority) {
+        if (modelOption?.priority) {
             requestBody.service_tier = 'priority';
         }
 
@@ -1435,7 +1474,7 @@
                 </ol>
             </div>
             <p style="font-size:13px;color:#666;margin-top:16px"><strong>Domain control:</strong> By default, all websites are disabled. After setup, you can enable websites one by one via the menu.</p>
-            <p style="font-size:13px;color:#666">The script uses GPT-5 Nano (cost-effective). Your key is stored locally and never shared.</p>
+            <p style="font-size:13px;color:#666">The script uses GPT-6 Luna (cost-effective) by default. Your key is stored locally and never shared.</p>
             <div class="actions">
                 <button class="btn secondary cancel">Maybe Later</button>
                 <button class="btn primary continue">Set Up API Key</button>
@@ -1543,6 +1582,17 @@
         shadow.querySelector('.btn-cancel').addEventListener('click', close);
     }
 
+    // Display labels for the custom model's reasoning effort options
+    const REASONING_LABELS = {
+        none: 'None',
+        minimal: 'Minimal (original GPT-5 models only)',
+        low: 'Low',
+        medium: 'Medium',
+        high: 'High',
+        xhigh: 'Extra high',
+        max: 'Max'
+    };
+
     /**
      * Show model selection dialog
      */
@@ -1623,7 +1673,7 @@
                         <option value="">Model default (no parameter sent)</option>
                         ${REASONING_EFFORTS.map(effort => `
                             <option value="${effort}" ${custom && custom.reasoning === effort ? 'selected' : ''}>
-                                ${effort.charAt(0).toUpperCase() + effort.slice(1)}
+                                ${REASONING_LABELS[effort]}
                             </option>
                         `).join('')}
                     </select>
@@ -1737,7 +1787,8 @@
 
         shadow.append(style, div);
         document.body.appendChild(host);
-        setTimeout(dismiss, timeoutMs);
+        // timeoutMs 0 keeps the toast until the user closes it
+        if (timeoutMs > 0) setTimeout(dismiss, timeoutMs);
     }
 
     /**
@@ -5325,17 +5376,27 @@
         // Create overlay
         createOverlay(OVERLAY_COLLAPSED, OVERLAY_POS, storage, handleDigest, handleInspection, handleSummaryHighlight, handleEditSelectors);
 
-        // Notify users whose saved model was removed from MODEL_OPTIONS. Persisting
-        // the fallback via setModel makes this a one-time notice.
-        if (MODEL_FALLBACK) {
-            await setModel(CFG.model);
-            showToast(
-                `Your selected AI model (${MODEL_FALLBACK}) is no longer offered. Switched to ${MODEL_OPTIONS[CFG.model].name}.`,
-                {
-                    actionLabel: 'Model settings',
-                    onAction: () => openModelSelectionDialog(storage, CFG.model, setModel)
-                }
-            );
+        // Save the active model when it was never saved or was just replaced, so a
+        // 'switched' notice shows only once and later default changes do not move
+        // users silently
+        if (MODEL_UNSAVED) await setModel(CFG.model);
+
+        // One-time notice for users whose model changed or whose custom model was
+        // retired; it stays until closed and links to the model settings
+        if (MODEL_NOTICE) {
+            let message;
+            if (MODEL_NOTICE.type === 'custom-retired') {
+                await storage.set(STORAGE_KEYS.RETIRED_NOTICE, MODEL_NOTICE.apiModel);
+                const date = new Date(`${MODEL_NOTICE.retiredOn}T00:00:00Z`).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+                message = `AI models have been updated. OpenAI retired ${MODEL_NOTICE.apiModel}, the model used by your custom model setting, on ${date}, so summaries will fail. Please choose another model.`;
+            } else {
+                message = `AI models have been updated. Your model (${MODEL_NOTICE.fromName}) is no longer available, so the script switched you to ${MODEL_OPTIONS[CFG.model].name}. You can choose another model in the model settings.`;
+            }
+            showToast(message, {
+                actionLabel: 'Model settings',
+                onAction: () => openModelSelectionDialog(storage, CFG.model, setModel),
+                timeoutMs: 0
+            });
         }
 
         // Auto-simplify if enabled
