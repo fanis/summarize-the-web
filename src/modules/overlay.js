@@ -544,6 +544,17 @@ export function getSummaryOverlayShadowCSS() {
             display: block;
         }
 
+        /* Real element (not a box-shadow spread) so it captures pointer events:
+           page text behind the modal can't be selected or clicked. */
+        .summarizer-summary-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 2147483644;
+            background: rgba(0, 0, 0, 0.4);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
         .summarizer-summary-overlay {
             position: fixed;
             top: 12px;
@@ -556,7 +567,7 @@ export function getSummaryOverlayShadowCSS() {
             width: 96%;
             max-width: 760px;
             max-height: 90vh;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35), 0 0 0 9999px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35);
             animation: summarizer-summary-fadein 0.3s ease;
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             box-sizing: border-box;
@@ -843,6 +854,9 @@ export function getSummaryOverlayShadowCSS() {
             color: #fff;
         }
         @media print {
+            .summarizer-summary-backdrop {
+                display: none;
+            }
             .summarizer-summary-overlay {
                 position: static;
                 transform: none;
@@ -1461,6 +1475,7 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     // Build shadow DOM content
     setHTML(summaryOverlayShadow, `
         <style>${getSummaryOverlayShadowCSS()}</style>
+        <div class="summarizer-summary-backdrop"></div>
         <div class="summarizer-summary-overlay">
             <div class="summarizer-summary-container">
                 <div class="summarizer-summary-header">
@@ -1609,9 +1624,12 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
         });
     });
 
-    // Close overlay when clicking the backdrop (the inner overlay element itself, not the container)
-    innerOverlay.addEventListener('click', (e) => {
-        if (e.target === innerOverlay) {
+    // Close overlay when clicking the backdrop. A drag-select that starts in the
+    // summary and ends on the backdrop targets their common ancestor, so it
+    // doesn't close the overlay.
+    const backdrop = summaryOverlayShadow.querySelector('.summarizer-summary-backdrop');
+    backdrop.addEventListener('click', (e) => {
+        if (e.target === backdrop) {
             closeHandler();
         }
     });
@@ -1619,6 +1637,14 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
     // Tracked at module level so removeSummaryOverlay() can unregister it on
     // every close path (buttons, backdrop, re-summarize) — not just Escape.
     summaryEscHandler = (e) => {
+        // Ctrl/Cmd+A selects the summary text instead of the page behind the modal
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
+            e.preventDefault();
+            window.getSelection()?.selectAllChildren(
+                summaryOverlayShadow.querySelector('.summarizer-summary-content-inner')
+            );
+            return;
+        }
         if (e.key === 'Escape') {
             // Close popover first if open
             if (settingsPopover.classList.contains('open')) {

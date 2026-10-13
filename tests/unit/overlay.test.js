@@ -227,6 +227,14 @@ describe('Overlay Module', () => {
       expect(getSummaryOverlayShadowCSS()).toMatch(/\.summarizer-summary-content\s*\{[^}]*overscroll-behavior:\s*contain/);
     });
 
+    it('uses a full-viewport backdrop element so page text behind the modal cannot be selected', async () => {
+      const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
+      const css = getSummaryOverlayShadowCSS();
+      expect(css).toMatch(/\.summarizer-summary-backdrop\s*\{[^}]*position:\s*fixed[^}]*inset:\s*0[^}]*user-select:\s*none/);
+      // A box-shadow spread dims the page but does not capture pointer events
+      expect(css).not.toContain('9999px');
+    });
+
     it('includes summary header controls and settings styles', async () => {
       const { getSummaryOverlayShadowCSS } = await import('../../src/modules/overlay.js');
       const css = getSummaryOverlayShadowCSS();
