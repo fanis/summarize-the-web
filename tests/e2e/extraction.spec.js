@@ -16,14 +16,15 @@ function getScriptContent() {
   return content.slice(endMeta + '==/UserScript=='.length);
 }
 
-const gmMocks = `
-  const mockStorage = {
+// extra: more storage values, e.g. a custom global selector list
+const gmMocks = (extra = {}) => `
+  const mockStorage = Object.assign({
     'digest_installed_v1': 'true',
     'OPENAI_KEY': 'test-api-key',
     'digest_model_v1': 'gpt-6-luna',
     'digest_domains_mode_v1': 'deny',
     'digest_domains_excluded_v1': '[]'
-  };
+  }, ${JSON.stringify(extra)});
   window.__sent = null;
   const reply = (opts) => {
     window.__sent = opts.data;
@@ -75,7 +76,7 @@ test.describe('Article extraction (Real Code)', () => {
         </body>
       </html>
     `);
-    await page.evaluate(gmMocks);
+    await page.evaluate(gmMocks());
     await page.addScriptTag({ content: getScriptContent() });
   });
 
@@ -103,5 +104,46 @@ test.describe('Article extraction (Real Code)', () => {
       ad: document.querySelector('.ad').getAttribute('style')
     }));
     expect(styles).toEqual({ sidebar: 'color: red;', ad: null });
+  });
+});
+
+test.describe('Hidden and off-screen containers (Real Code)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.setContent(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>Visibility Test</title></head>
+        <body>
+          <div class="post" style="display: none"><p>COLLAPSED_TEXT ${filler}</p></div>
+          <div class="post"><p>VISIBLE_TEXT ${filler}</p></div>
+          <div style="height: 4000px"></div>
+          <div class="post"><p>OFFSCREEN_TEXT ${filler}</p></div>
+          <div class="post" style="content-visibility: hidden"><p>CV_HIDDEN_TEXT ${filler}</p></div>
+          <div class="post" style="max-height: 20px; overflow: hidden"><p>CLIPPED_TEXT ${filler} ${filler}</p></div>
+        </body>
+      </html>
+    `);
+    await page.evaluate(gmMocks({ 'digest_selectors_v1': JSON.stringify(['.post']) }));
+    await page.addScriptTag({ content: getScriptContent() });
+  });
+
+  test('leaves out hidden matches and keeps visible text outside the viewport', async ({ page }) => {
+    const text = await summarizeAndGetRequestText(page);
+    expect(text).not.toContain('COLLAPSED_TEXT');
+    expect(text).toContain('VISIBLE_TEXT');
+    expect(text).toContain('OFFSCREEN_TEXT');
+    expect(text).toContain('CLIPPED_TEXT');
+    expect(text).not.toContain('CV_HIDDEN_TEXT');
+  });
+
+  test('reports at most 100% of the page for the container', async ({ page }) => {
+    await page.evaluate(() => {
+      for (const host of document.querySelectorAll('[data-digest-ui]')) host.shadowRoot?.querySelector('.highlight-btn')?.click();
+    });
+    const message = await page.locator('#stw-highlight-message').textContent();
+    expect(message).toContain('.post x 3');
+    const percent = Number(message.match(/\((\d+)%\)/)[1]);
+    expect(percent).toBeLessThanOrEqual(100);
   });
 });

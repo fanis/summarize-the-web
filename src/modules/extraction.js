@@ -92,8 +92,8 @@ const textLength = (el) => (el.innerText ?? el.textContent ?? '').trim().length;
 
 /**
  * Collect the container elements one selector matches. Matches that are
- * excluded (see containerExclusions) or nested inside an earlier match are
- * skipped. Every match is kept, so repeated blocks such as forum comments, or
+ * excluded (see containerExclusions), hidden by the page, or nested inside an
+ * earlier match are skipped. Every match is kept, so repeated blocks such as forum comments, or
  * a body split by ads, are all summarized. The generic selectors (`article`
  * also matches teaser cards) are the exception: when one match holds at
  * least 70% of the selector's text, only that match is kept.
@@ -104,6 +104,13 @@ function containerMatches(selector, EXCLUDE, site) {
     const elements = [];
     for (const el of document.querySelectorAll(selector)) {
         if (rules && isExcludedElement(el, rules)) continue;
+        // Skip matches the page hides (display: none, e.g. collapsed comments);
+        // their innerText would fall back to the raw text. checkVisibility()
+        // ignores the viewport, so text scrolled out of view is kept. It
+        // checks content-visibility: hidden only on ancestors, so check the
+        // match itself too.
+        if (typeof el.checkVisibility === 'function' &&
+            (!el.checkVisibility() || getComputedStyle(el).contentVisibility === 'hidden')) continue;
         // Document order: a nested match follows the match that contains it
         const last = elements[elements.length - 1];
         if (last && last.contains(el)) continue;
