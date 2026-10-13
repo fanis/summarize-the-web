@@ -22,7 +22,12 @@ npm run test:e2e
 
 # Run all tests
 npm run test:all
+
+# Regenerate the real-site fixtures (needs network; all sites, or name some)
+npm run fixtures:sites -- bbc guardian
 ```
+
+`tests/e2e/sites.spec.js` scores the default selectors and exclusions on structure-only copies of real article pages in `tests/fixtures/sites/` (text replaced with lorem ipsum, article body marked `data-fx-body`). It checks recall (body text sent) and precision (sent text that is body). To add a site, add its article URL and body selector to `SITES` in `tests/fixtures/sites/generate.mjs`; `--inspect` prints body candidates.
 
 The build uses Rollup to bundle ES6 modules into a single IIFE userscript with the metadata header from `src/banner.txt`.
 
