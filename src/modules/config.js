@@ -193,11 +193,19 @@ export const DEFAULT_SELECTORS = [
     '[class*="articleContainer"]',
     '.story-content',
     '.story-body',
+    // Cypriot news sites (Cyprus Mail, Politis)
+    '.articleBody',
+    '.post-content-html',
     // Generic fallbacks
     'article',
     'main',
     '[role="main"]'
 ];
+
+// Container selectors that wrap the whole page body, not just the article.
+// They are used only when no other container selector matches enough text
+// (see selectContainers).
+export const GENERIC_CONTAINER_SELECTORS = ['article', 'main', '[role="main"]'];
 
 // Default exclusions (elements to skip when extracting text)
 export const DEFAULT_EXCLUDES = {

@@ -169,7 +169,9 @@ Domain patterns support:
 Configure which parts of a page get summarized using global and per-domain CSS selectors. Access via the badge settings menu.
 
 How the rules combine:
-- A container selector uses every element it matches, so a domain selector such as `.commtext` on Hacker News collects all comments. For a global selector, when one match holds at least 70% of the selector's text, only that match is used, so `article` picks the main story over teaser cards.
+- A container selector uses every element it matches, so a domain selector such as `.commtext` on Hacker News collects all comments, and a body split by ads is read whole. For the generic selectors `article`, `main` and `[role="main"]`, when one match holds at least 70% of the selector's text, only that match is used, so `article` picks the main story over teaser cards.
+- Specific body selectors (every selector except `article`, `main` and `[role="main"]`) win over the generic ones when they match at least the minimum text length. The generic selectors wrap the whole page body, including related stories and share links, so they are a fallback.
+- When a match sits inside another match and holds at least 70% of its paragraph text, the inner one is used: `.articleBody` inside a wrapper with tags and share links, or `article` inside `main`.
 - A container match inside an excluded element is skipped. Global exclusions do not apply to a container named by a domain selector: on Hacker News, `.commtext` works although every comment sits inside `.comment`, a default global exclusion. Domain exclusions still apply.
 - Inside a container, an element is excluded when it, or an element between it and the container, matches an exclusion (global or domain).
 

@@ -2,7 +2,7 @@
  * Article extraction logic for Summarize The Web
  */
 
-import { UI_ATTR } from './config.js';
+import { UI_ATTR, GENERIC_CONTAINER_SELECTORS } from './config.js';
 import { log } from './utils.js';
 import { isExcludedElement, containerExclusions } from './selectors.js';
 
@@ -93,10 +93,10 @@ const textLength = (el) => (el.innerText ?? el.textContent ?? '').trim().length;
 /**
  * Collect the container elements one selector matches. Matches that are
  * excluded (see containerExclusions) or nested inside an earlier match are
- * skipped. Site selectors keep every match, so repeated blocks such as forum
- * comments are all summarized. Global selectors are generic (`article` also
- * matches teaser cards), so when one match holds at least 70% of the
- * selector's text, only that match is kept.
+ * skipped. Every match is kept, so repeated blocks such as forum comments, or
+ * a body split by ads, are all summarized. The generic selectors (`article`
+ * also matches teaser cards) are the exception: when one match holds at
+ * least 70% of the selector's text, only that match is kept.
  * @returns {Element[]} - Matches in document order
  */
 function containerMatches(selector, EXCLUDE, site) {
@@ -110,7 +110,7 @@ function containerMatches(selector, EXCLUDE, site) {
         elements.push(el);
     }
 
-    if (elements.length > 1 && !site?.selectors?.includes(selector)) {
+    if (elements.length > 1 && GENERIC_CONTAINER_SELECTORS.includes(selector) && !site?.selectors?.includes(selector)) {
         const lengths = elements.map(textLength);
         const total = lengths.reduce((a, b) => a + b, 0);
         const max = Math.max(...lengths);
@@ -225,7 +225,33 @@ export function selectContainers(SELECTORS, minLength = 100, EXCLUDE = null, sit
 
     // Sort by text length descending
     candidates.sort((a, b) => b.length - a.length);
-    const best = candidates[0];
+
+    // Specific body selectors beat the generic fallbacks (article, main): a
+    // generic container wraps the body, so by length alone it always wins,
+    // page chrome included. Choose among the generic ones only when no
+    // specific selector matches enough text.
+    const specific = candidates.filter(c => c.length >= minLength && !GENERIC_CONTAINER_SELECTORS.includes(c.selector));
+    const pool = specific.length > 0 ? specific : candidates;
+    let best = pool[0];
+
+    // A wrapper can hold the body plus tags, share links and asides (e.g.
+    // [class*="articleContainer"] around .articleBody, or main around
+    // article). Prefer a match nested inside it that holds at least 70% of
+    // its paragraph text; repeat while a deeper match qualifies.
+    const pLength = (c) => c.elements.reduce((sum, el) =>
+        sum + [...el.querySelectorAll('p')].reduce((n, p) => n + textLength(p), 0), 0);
+    const nestedIn = (inner, outer) => inner.elements.every(el => outer.elements.some(o => o !== el && o.contains(el)));
+    let refined = false;
+    for (;;) {
+        const outerP = pLength(best);
+        const inner = pool.find(c => c !== best && c.length >= minLength && nestedIn(c, best) && pLength(c) >= outerP * 0.7);
+        if (!inner) break;
+        best = inner;
+        refined = true;
+    }
+    if (refined) {
+        return { selected: [best], candidates };
+    }
 
     // Every configured match is below the minimum (e.g. an empty <article>
     // teaser) — a density guess that finds more text is a better bet.
@@ -237,13 +263,13 @@ export function selectContainers(SELECTORS, minLength = 100, EXCLUDE = null, sit
     }
 
     // Check if one container is dominant (>70% of page, and next best is <50% of best)
-    const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
+    const dominated = best.percent > 70 && (pool.length < 2 || pool[1].percent < best.percent * 0.5);
     if (dominated) {
         return { selected: [best], candidates };
     }
 
     // Multiple significant containers - combine non-nested ones
-    const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
+    const significant = pool.filter(c => c.percent >= 15 && c.length > minLength);
     const overlaps = (a, b) => a.elements.some(x => b.elements.some(y => x.contains(y) || y.contains(x)));
     const nonNested = significant.filter((c, i) =>
         !significant.some((other, j) => i !== j && overlaps(c, other))

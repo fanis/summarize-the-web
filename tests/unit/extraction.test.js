@@ -525,6 +525,72 @@ describe('Extraction Module', () => {
       });
     });
 
+    describe('specific and generic container selectors', () => {
+      const NO_EXCLUDE = { self: [], ancestors: [] };
+      const related = Array.from({ length: 6 }, (_, i) => `<div class="card"><p>Related story ${i + 1}. ${ARTICLE_TEXT}</p></div>`).join('');
+
+      it('should prefer a specific body selector over a longer generic container', () => {
+        createTestDOM(`<main><div class="post-content"><p>Body text. ${ARTICLE_TEXT}</p></div>${related}</main>`);
+
+        const result = extractArticleBody(['.post-content', 'main'], NO_EXCLUDE);
+
+        expect(result.text).toContain('Body text');
+        expect(result.text).not.toContain('Related story');
+      });
+
+      it('should use the generic container when no specific selector has enough text', () => {
+        createTestDOM(`<main><div class="post-content"><p>Tiny.</p></div><p>Main text. ${ARTICLE_TEXT}</p></main>`);
+
+        const result = extractArticleBody(['.post-content', 'main'], NO_EXCLUDE);
+
+        expect(result.text).toContain('Main text');
+      });
+
+      it('should prefer a nested match that holds most of the paragraph text', () => {
+        createTestDOM(`
+          <div class="articleContainer">
+            <div class="tags"><a>Tag one</a> <a>Tag two</a> <a>Tag three</a></div>
+            <div class="articleBody"><p>Body one. ${ARTICLE_TEXT}</p><p>Body two. ${ARTICLE_TEXT}</p></div>
+            <div class="share"><a>Share on social media</a></div>
+          </div>`);
+
+        const result = extractArticleBody(['[class*="articleContainer"]', '.articleBody'], NO_EXCLUDE);
+
+        expect(result.text).toContain('Body one');
+        expect(result.text).toContain('Body two');
+        expect(result.text).not.toContain('Tag one');
+        expect(result.text).not.toContain('Share on');
+      });
+
+      it('should keep the wrapper when the nested match holds under 70% of its paragraph text', () => {
+        createTestDOM(`
+          <div class="article-body">
+            <p>Intro paragraph. ${ARTICLE_TEXT}</p>
+            <p>Second paragraph. ${ARTICLE_TEXT}</p>
+            <div class="post-content"><p>Inner paragraph. ${ARTICLE_TEXT}</p></div>
+          </div>`);
+
+        const result = extractArticleBody(['.article-body', '.post-content'], NO_EXCLUDE);
+
+        expect(result.text).toContain('Intro paragraph');
+        expect(result.text).toContain('Inner paragraph');
+      });
+
+      it('should keep every match of a specific selector, such as a body split by an ad', () => {
+        createTestDOM(`
+          <article>
+            <div class="post-content"><p>Long first part. ${ARTICLE_TEXT} ${ARTICLE_TEXT} ${ARTICLE_TEXT}</p></div>
+            <div class="ad">Advert</div>
+            <div class="post-content"><p>Short second part.</p></div>
+          </article>`);
+
+        const result = extractArticleBody(['.post-content', 'article'], NO_EXCLUDE);
+
+        expect(result.text).toContain('Long first part');
+        expect(result.text).toContain('Short second part');
+      });
+    });
+
     describe('with DEFAULT_SELECTORS and DEFAULT_EXCLUDES', () => {
       it('should extract from typical news article structure', () => {
         createTestDOM(`
