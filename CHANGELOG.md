@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.11.0] - 2026-10-13
 
 ### Changed
 - **Container selectors use every match.** A selector used to pick only the first element it matched, so a domain selector for repeated blocks (such as `.commtext` for Hacker News comments) summarized one comment, and a body split by ads lost its later parts. Selectors now collect every match. For the generic selectors `article`, `main` and `[role="main"]`, when one match holds at least 70% of the selector's text, only that match is used, so `article` still picks the main story over teaser cards.

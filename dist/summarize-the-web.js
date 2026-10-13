@@ -3,7 +3,7 @@
 // @namespace    https://fanis.dev/userscripts
 // @author       Fanis Hatzidakis
 // @license      PolyForm-Internal-Use-1.0.0; https://polyformproject.org/licenses/internal-use/1.0.0/
-// @version      2.10.1
+// @version      2.11.0
 // @description  Summarize web articles via OpenAI API. Modular architecture with configurable selectors and inspection mode.
 // @match        *://*/*
 // @exclude      about:*
@@ -226,11 +226,19 @@
         '[class*="articleContainer"]',
         '.story-content',
         '.story-body',
+        // Cypriot news sites (Cyprus Mail, Politis)
+        '.articleBody',
+        '.post-content-html',
         // Generic fallbacks
         'article',
         'main',
         '[role="main"]'
     ];
+
+    // Container selectors that wrap the whole page body, not just the article.
+    // They are used only when no other container selector matches enough text
+    // (see selectContainers).
+    const GENERIC_CONTAINER_SELECTORS = ['article', 'main', '[role="main"]'];
 
     // Default exclusions (elements to skip when extracting text)
     const DEFAULT_EXCLUDES = {
@@ -587,6 +595,45 @@
             for (const sel of EXCLUDE.ancestors) {
                 try {
                     if (el.closest(sel)) return true;
+                } catch {}
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get the exclusion rules that can drop a container match. A match from a
+     * site (domain) selector is dropped only by site exclusions: naming the
+     * container for the site overrides a global exclusion of its ancestors
+     * (e.g. `.commtext` inside `.comment` on Hacker News).
+     * @param {string} selector - Container selector that produced the match
+     * @param {Object} EXCLUDE - Merged global + site exclusion rules
+     * @param {Object} [site] - { selectors, exclude } for the current site
+     * @returns {Object} - Exclusion rules with self and ancestors arrays
+     */
+    function containerExclusions(selector, EXCLUDE, site) {
+        if (site?.selectors?.includes(selector)) {
+            return site.exclude || { self: [], ancestors: [] };
+        }
+        return EXCLUDE;
+    }
+
+    /**
+     * Check whether an element inside a container is excluded: the element, or
+     * an ancestor below the container, matches any exclusion selector. This is
+     * the rule extraction uses when it removes excluded elements from the
+     * container text, so the highlight views must use it too.
+     * @param {Element} el - Element inside the container (or the container itself)
+     * @param {Element} container - Container element
+     * @param {Object} EXCLUDE - Object with self and ancestors selector arrays
+     * @returns {boolean}
+     */
+    function isExcludedInContainer(el, container, EXCLUDE) {
+        const selectors = [...(EXCLUDE.self || []), ...(EXCLUDE.ancestors || [])];
+        for (let node = el; node && node !== container; node = node.parentElement) {
+            for (const sel of selectors) {
+                try {
+                    if (node.matches(sel)) return true;
                 } catch {}
             }
         }
@@ -2237,36 +2284,98 @@
     }
 
     /**
-     * Clean container text by removing UI and excluded elements
-     * @param {Element} container - Container element
+     * Get the text of container elements without UI and excluded elements
+     * @param {Element[]} containers - Non-nested container elements
      * @param {Object} EXCLUDE - Exclusion rules
-     * @returns {string} - Cleaned text
+     * @returns {string[]} - Cleaned text of each container, in order
      */
-    function cleanContainerText(container, EXCLUDE) {
-        const clone = container.cloneNode(true);
-
-        // Remove UI elements
-        clone.querySelectorAll(`[${UI_ATTR}]`).forEach(el => el.remove());
-
-        // Remove excluded elements (self)
-        if (EXCLUDE.self) {
-            for (const sel of EXCLUDE.self) {
+    function cleanContainerTexts(containers, EXCLUDE) {
+        // Find UI and excluded elements on the live page, so selectors that
+        // depend on ancestors outside the container (e.g. `.comment p`) match the
+        // same way as in isExcludedInContainer(). Both self and ancestors
+        // exclusions drop the whole subtree.
+        const selectors = [...(EXCLUDE.self || []), ...(EXCLUDE.ancestors || [])];
+        const excluded = new Set();
+        for (const container of containers) {
+            container.querySelectorAll(`[${UI_ATTR}]`).forEach(el => excluded.add(el));
+            for (const sel of selectors) {
                 try {
-                    clone.querySelectorAll(sel).forEach(el => el.remove());
+                    container.querySelectorAll(sel).forEach(el => excluded.add(el));
                 } catch {}
             }
         }
 
-        // Remove excluded containers (ancestors)
-        if (EXCLUDE.ancestors) {
-            for (const sel of EXCLUDE.ancestors) {
-                try {
-                    clone.querySelectorAll(sel).forEach(el => el.remove());
-                } catch {}
+        // innerText keeps paragraph breaks and skips script, style and hidden
+        // text, but only for elements on a rendered page: a detached clone gives
+        // raw textContent, which glues paragraphs together ("end.Start"). So hide
+        // the excluded elements, read the text, and restore their style attribute
+        // in the same task; the page is not painted in between.
+        if (typeof containers[0]?.innerText === 'string' && containers[0].isConnected) {
+            const saved = [...excluded].map(el => [el, el.getAttribute('style')]);
+            for (const [el] of saved) el.style.setProperty('display', 'none', 'important');
+            try {
+                return containers.map(c => c.innerText.trim());
+            } finally {
+                for (const [el, style] of saved) {
+                    // Set first: Chrome writes inline style changes to the
+                    // attribute lazily, and removeAttribute() before that write
+                    // still leaves style="" behind
+                    el.setAttribute('style', style ?? '');
+                    if (style === null) el.removeAttribute('style');
+                }
             }
         }
 
-        return (clone.innerText ?? clone.textContent ?? '').trim();
+        // No layout (e.g. jsdom): remove the excluded copies from a clone
+        return containers.map(container => {
+            const clone = container.cloneNode(true);
+            if (excluded.size) {
+                // A deep clone lists its elements in the same order as the original
+                const cloneEls = clone.querySelectorAll('*');
+                container.querySelectorAll('*').forEach((el, i) => {
+                    if (excluded.has(el)) cloneEls[i].remove();
+                });
+            }
+            return (clone.innerText ?? clone.textContent ?? '').trim();
+        });
+    }
+
+    const textLength = (el) => (el.innerText ?? el.textContent ?? '').trim().length;
+
+    /**
+     * Collect the container elements one selector matches. Matches that are
+     * excluded (see containerExclusions), hidden by the page, or nested inside an
+     * earlier match are skipped. Every match is kept, so repeated blocks such as forum comments, or
+     * a body split by ads, are all summarized. The generic selectors (`article`
+     * also matches teaser cards) are the exception: when one match holds at
+     * least 70% of the selector's text, only that match is kept.
+     * @returns {Element[]} - Matches in document order
+     */
+    function containerMatches(selector, EXCLUDE, site) {
+        const rules = EXCLUDE ? containerExclusions(selector, EXCLUDE, site) : null;
+        const elements = [];
+        for (const el of document.querySelectorAll(selector)) {
+            if (rules && isExcludedElement(el, rules)) continue;
+            // Skip matches the page hides (display: none, e.g. collapsed comments);
+            // their innerText would fall back to the raw text. checkVisibility()
+            // ignores the viewport, so text scrolled out of view is kept. It
+            // checks content-visibility: hidden only on ancestors, so check the
+            // match itself too.
+            if (typeof el.checkVisibility === 'function' &&
+                (!el.checkVisibility() || getComputedStyle(el).contentVisibility === 'hidden')) continue;
+            // Document order: a nested match follows the match that contains it
+            const last = elements[elements.length - 1];
+            if (last && last.contains(el)) continue;
+            elements.push(el);
+        }
+
+        if (elements.length > 1 && GENERIC_CONTAINER_SELECTORS.includes(selector) && !site?.selectors?.includes(selector)) {
+            const lengths = elements.map(textLength);
+            const total = lengths.reduce((a, b) => a + b, 0);
+            const max = Math.max(...lengths);
+            if (total > 0 && max >= total * 0.7) return [elements[lengths.indexOf(max)]];
+        }
+        return elements;
     }
 
     // Text blocks counted by the density fallback. Only leaf blocks are counted
@@ -2282,8 +2391,9 @@
      * text — the tightest wrapper around the main body of the page.
      * @param {number} minLength - Minimum total block text required to guess
      * @param {number} [bodyLength] - Page text length, for the percent stat
-     * @returns {Object|null} - Candidate entry { candidate, selector, length, percent }
-     *   with selector set to '(auto-detected)', or null if there isn't enough text
+     * @returns {Object|null} - Candidate entry { elements, selector, length, percent }
+     *   with one element and selector set to '(auto-detected)', or null if there
+     *   isn't enough text
      */
     function guessArticleContainer(minLength = 100, bodyLength = 0) {
         if (!bodyLength) {
@@ -2324,7 +2434,7 @@
 
         const rawText = (container.innerText ?? container.textContent ?? '').trim();
         return {
-            candidate: container,
+            elements: [container],
             selector: '(auto-detected)',
             length: rawText.length,
             percent: Math.round((rawText.length / bodyLength) * 100)
@@ -2335,14 +2445,17 @@
      * Find and rank article container candidates. Shared by extraction and the
      * summary-highlight inspection view so the dominance heuristic lives in one
      * place. Falls back to a text-density guess when no selector matches
-     * anything usable.
+     * anything usable. Each candidate is one selector with all the container
+     * elements it matches (see containerMatches).
      * @param {string[]} SELECTORS - CSS selectors to find containers
      * @param {number} minLength - Minimum text length for a significant container
+     * @param {Object} [EXCLUDE] - Merged exclusion rules; excluded matches are skipped
+     * @param {Object} [site] - { selectors, exclude } for the current site
      * @returns {Object|null} - { selected, candidates } where selected holds one
      *   entry (single container) or several (non-nested containers to combine),
      *   or null when no selector matched and the density fallback found nothing.
      */
-    function selectContainers(SELECTORS, minLength = 100) {
+    function selectContainers(SELECTORS, minLength = 100, EXCLUDE = null, site = null) {
         // Get total page text for comparison
         const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
         const bodyLength = bodyText.length || 1; // Avoid division by zero
@@ -2350,17 +2463,18 @@
         // Collect all matching candidates with their text stats
         const candidates = [];
         for (const selector of SELECTORS) {
+            let elements;
             try {
-                const candidate = document.querySelector(selector);
-                if (!candidate) continue;
-
-                const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
-                const percent = Math.round((rawText.length / bodyLength) * 100);
-
-                candidates.push({ candidate, selector, length: rawText.length, percent });
+                elements = containerMatches(selector, EXCLUDE, site);
             } catch (e) {
                 // Invalid selector, skip
+                continue;
             }
+            if (elements.length === 0) continue;
+
+            const length = elements.reduce((sum, el) => sum + textLength(el), 0);
+            const percent = Math.round((length / bodyLength) * 100);
+            candidates.push({ elements, selector, length, percent });
         }
 
         if (candidates.length === 0) {
@@ -2370,7 +2484,33 @@
 
         // Sort by text length descending
         candidates.sort((a, b) => b.length - a.length);
-        const best = candidates[0];
+
+        // Specific body selectors beat the generic fallbacks (article, main): a
+        // generic container wraps the body, so by length alone it always wins,
+        // page chrome included. Choose among the generic ones only when no
+        // specific selector matches enough text.
+        const specific = candidates.filter(c => c.length >= minLength && !GENERIC_CONTAINER_SELECTORS.includes(c.selector));
+        const pool = specific.length > 0 ? specific : candidates;
+        let best = pool[0];
+
+        // A wrapper can hold the body plus tags, share links and asides (e.g.
+        // [class*="articleContainer"] around .articleBody, or main around
+        // article). Prefer a match nested inside it that holds at least 70% of
+        // its paragraph text; repeat while a deeper match qualifies.
+        const pLength = (c) => c.elements.reduce((sum, el) =>
+            sum + [...el.querySelectorAll('p')].reduce((n, p) => n + textLength(p), 0), 0);
+        const nestedIn = (inner, outer) => inner.elements.every(el => outer.elements.some(o => o !== el && o.contains(el)));
+        let refined = false;
+        for (;;) {
+            const outerP = pLength(best);
+            const inner = pool.find(c => c !== best && c.length >= minLength && nestedIn(c, best) && pLength(c) >= outerP * 0.7);
+            if (!inner) break;
+            best = inner;
+            refined = true;
+        }
+        if (refined) {
+            return { selected: [best], candidates };
+        }
 
         // Every configured match is below the minimum (e.g. an empty <article>
         // teaser) — a density guess that finds more text is a better bet.
@@ -2382,17 +2522,16 @@
         }
 
         // Check if one container is dominant (>70% of page, and next best is <50% of best)
-        const dominated = best.percent > 70 && (candidates.length < 2 || candidates[1].percent < best.percent * 0.5);
+        const dominated = best.percent > 70 && (pool.length < 2 || pool[1].percent < best.percent * 0.5);
         if (dominated) {
             return { selected: [best], candidates };
         }
 
         // Multiple significant containers - combine non-nested ones
-        const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
+        const significant = pool.filter(c => c.percent >= 15 && c.length > minLength);
+        const overlaps = (a, b) => a.elements.some(x => b.elements.some(y => x.contains(y) || y.contains(x)));
         const nonNested = significant.filter((c, i) =>
-            !significant.some((other, j) => i !== j &&
-                (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
-            )
+            !significant.some((other, j) => i !== j && overlaps(c, other))
         );
 
         return { selected: nonNested.length > 1 ? nonNested : [best], candidates };
@@ -2403,10 +2542,11 @@
      * @param {string[]} SELECTORS - CSS selectors to find container
      * @param {Object} EXCLUDE - Exclusion rules
      * @param {number} minLength - Minimum text length required
+     * @param {Object} [site] - { selectors, exclude } for the current site
      * @returns {Object|null} - { text, container, title } or { error, ... } or null
      */
-    function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
-        const selection = selectContainers(SELECTORS, minLength);
+    function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100, site = null) {
+        const selection = selectContainers(SELECTORS, minLength, EXCLUDE, site);
         if (!selection) {
             log('No article container found');
             return { error: 'no_container' };
@@ -2419,9 +2559,14 @@
             log('Container candidates:', topCandidates.map(c => `${c.selector} (${c.percent}%)`).join(', '));
         }
 
+        // Cleaned text of every element of the given candidates, in order
+        const joinText = (cands) => cleanContainerTexts(cands.flatMap(c => c.elements), EXCLUDE)
+            .filter(Boolean)
+            .join('\n\n');
+
         if (selected.length > 1) {
             // Combine cleaned text from multiple containers
-            const combinedText = selected.map(c => cleanContainerText(c.candidate, EXCLUDE)).join('\n\n');
+            const combinedText = joinText(selected);
             log('Combined', selected.length, 'containers:', selected.map(c => c.selector).join(', '));
 
             if (combinedText.length < minLength) {
@@ -2430,12 +2575,13 @@
             }
 
             log(`Extracted ${combinedText.length} characters from combined containers`);
-            return { text: combinedText, elements: null, container: selected[0].candidate, title: null };
+            return { text: combinedText, elements: null, container: selected[0].elements[0], title: null };
         }
 
         const best = selected[0];
-        const container = best.candidate;
-        log('Selected container:', best.selector, 'with', best.length, 'chars', `(${best.percent}% of page)`);
+        const container = best.elements[0];
+        log('Selected container:', best.selector, `(${best.elements.length} match${best.elements.length === 1 ? '' : 'es'})`,
+            'with', best.length, 'chars', `(${best.percent}% of page)`);
 
         // Try to find article title
         let title = null;
@@ -2458,8 +2604,8 @@
             }
         }
 
-        // Get cleaned text from container
-        const text = cleanContainerText(container, EXCLUDE);
+        // Get cleaned text from all matches of the container selector
+        const text = joinText([best]);
 
         if (!text) {
             log('No text found in container');
@@ -2486,9 +2632,10 @@
      * @param {string[]} SELECTORS - CSS selectors to find container
      * @param {Object} EXCLUDE - Exclusion rules
      * @param {number} minLength - Minimum text length required
+     * @param {Object} [site] - { selectors, exclude } for the current site
      * @returns {Object} - { text, source, ... } or { error, ... }
      */
-    function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100) {
+    function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100, site = null) {
         // First check if user has selected text
         const selected = getSelectedText(minLength);
         if (selected) {
@@ -2499,7 +2646,7 @@
         }
 
         // Otherwise extract article body
-        const article = extractArticleBody(SELECTORS, EXCLUDE, minLength);
+        const article = extractArticleBody(SELECTORS, EXCLUDE, minLength, site);
         if (article.error) {
             return { error: article.error, actualLength: article.actualLength, minLength, source: 'article' };
         }
@@ -2682,16 +2829,15 @@
     }
 
     /**
-     * Find ancestor that matches a selector list
+     * Find the nearest ancestor that matches a selector list and is kept as a
+     * container (survives(node, matchingSelectors) returns true)
      */
-    function findMatchingAncestor(el, selectors) {
-        for (const sel of selectors) {
-            try {
-                const ancestor = el.closest(sel);
-                if (ancestor && ancestor !== el) {
-                    return { selector: sel, element: ancestor };
-                }
-            } catch {}
+    function findMatchingAncestor(el, selectors, survives) {
+        for (let node = el.parentElement; node; node = node.parentElement) {
+            const matching = findMatchingSelectors(node, selectors);
+            if (matching.length > 0 && survives(node, matching)) {
+                return { selector: matching[0], element: node };
+            }
         }
         return null;
     }
@@ -2710,15 +2856,28 @@
         const globalExclusions = findMatchingExclusions(el, EXCLUDE_GLOBAL);
         const domainExclusions = findMatchingExclusions(el, EXCLUDE_DOMAIN);
 
-        const isExcluded = isExcludedElement(el, EXCLUDE);
+        // Same rules as extraction: a container match is dropped by the exclusions
+        // for its selector (site selectors ignore global exclusions), and inside a
+        // container only exclusions below the container count.
+        const site = { selectors: SELECTORS_DOMAIN, exclude: EXCLUDE_DOMAIN };
+        const survives = (node, sels) => sels.some(sel => !isExcludedElement(node, containerExclusions(sel, EXCLUDE, site)));
 
         const isMatched = globalSelectors.length > 0 || domainSelectors.length > 0;
-        const isProcessed = isMatched && !isExcluded;
 
         // Check if element is INSIDE a matched container (even if not directly matched)
         const allSelectors = [...SELECTORS_GLOBAL, ...SELECTORS_DOMAIN];
-        const ancestorMatch = !isMatched ? findMatchingAncestor(el, allSelectors) : null;
+        const ancestorMatch = !isMatched ? findMatchingAncestor(el, allSelectors, survives) : null;
         const isInsideContainer = ancestorMatch !== null;
+
+        let isExcluded;
+        if (isMatched) {
+            isExcluded = !survives(el, [...globalSelectors, ...domainSelectors]);
+        } else if (ancestorMatch) {
+            isExcluded = isExcludedInContainer(el, ancestorMatch.element, EXCLUDE);
+        } else {
+            isExcluded = isExcludedElement(el, EXCLUDE);
+        }
+        const isProcessed = isMatched && !isExcluded;
         const isIncludedInSummary = !isExcluded && (isMatched || isInsideContainer);
 
         // Count text-containing children
@@ -2842,18 +3001,25 @@
             `<ul class="list">${diag.domainSelectors.map(s => `<li class="match">✓ <span class="code">${escapeHtml(s)}</span></li>`).join('')}</ul>` :
             '<p class="info-row no-match">No domain selectors configured or matched.</p>';
 
+        // Exclusions can match an ancestor and still not apply: extraction only
+        // removes excluded elements inside a container, and global exclusions
+        // don't drop a container named by a site selector
+        const notApplied = (why) => diag.isExcluded ? '' : `<p class="info-row no-match">Not applied: ${why}.</p>`;
+        const notAppliedGlobalHTML = notApplied('these match only outside the container, or the container comes from a domain selector');
+        const notAppliedDomainHTML = notApplied('these match only outside the container');
+
         const globalExclusionsHTML = (diag.globalExclusions.self.length > 0 || diag.globalExclusions.ancestors.length > 0) ?
             `<ul class="list">
             ${diag.globalExclusions.self.map(s => `<li class="problem">✗ Element matches: <span class="code">${escapeHtml(s)}</span></li>`).join('')}
             ${diag.globalExclusions.ancestors.map(s => `<li class="problem">✗ Ancestor matches: <span class="code">${escapeHtml(s)}</span></li>`).join('')}
-        </ul>` :
+        </ul>${notAppliedGlobalHTML}` :
             '<p class="info-row no-match">No global exclusions affect this element.</p>';
 
         const domainExclusionsHTML = (diag.domainExclusions.self?.length > 0 || diag.domainExclusions.ancestors?.length > 0) ?
             `<ul class="list">
             ${(diag.domainExclusions.self || []).map(s => `<li class="problem">✗ Element matches: <span class="code">${escapeHtml(s)}</span></li>`).join('')}
             ${(diag.domainExclusions.ancestors || []).map(s => `<li class="problem">✗ Ancestor matches: <span class="code">${escapeHtml(s)}</span></li>`).join('')}
-        </ul>` :
+        </ul>${notAppliedDomainHTML}` :
             '<p class="info-row no-match">No domain exclusions configured or affect this element.</p>';
 
         const restoreInspectedOutline = () => {
@@ -3116,8 +3282,12 @@
 
     /**
      * Show which elements would be included in summary
+     * @param {string[]} SELECTORS - Merged container selectors
+     * @param {Object} EXCLUDE - Merged exclusion rules
+     * @param {number} minLength - Minimum text length for a significant container
+     * @param {Object} [site] - { selectors, exclude } for the current site
      */
-    function showSummaryHighlight(SELECTORS, EXCLUDE, minLength = 100) {
+    function showSummaryHighlight(SELECTORS, EXCLUDE, minLength = 100, site = null) {
         if (summaryHighlightActive) {
             exitSummaryHighlight();
             return;
@@ -3126,7 +3296,7 @@
         summaryHighlightActive = true;
         highlightedElements = [];
 
-        const selection = selectContainers(SELECTORS, minLength);
+        const selection = selectContainers(SELECTORS, minLength, EXCLUDE, site);
         if (!selection) {
             showHighlightMessage('No article container found matching configured selectors.', false);
             return;
@@ -3139,54 +3309,76 @@
         let includedCount = 0;
         let excludedCount = 0;
 
-        // Elements already highlighted, for skipping nested matches. Within a
-        // container, querySelectorAll returns document order, so ancestors are
-        // always visited before their descendants; a parent-chain lookup against
-        // this set replaces the previous O(n²) contains() scan.
-        const highlighted = new Set();
+        // Highlighted elements and their type, for skipping nested matches.
+        // Within a container, querySelectorAll returns document order, so
+        // ancestors are always visited before their descendants; a parent-chain
+        // lookup against this map replaces the previous O(n²) contains() scan.
+        const highlighted = new Map();
+
+        const mark = (el, type) => {
+            highlighted.set(el, type);
+            highlightedElements.push({
+                element: el,
+                origBoxShadow: el.style.boxShadow,
+                origPosition: el.style.position,
+                type
+            });
+
+            if (type === 'excluded') {
+                el.style.boxShadow = 'inset 0 0 0 2px #ea4335';
+                excludedCount++;
+            } else {
+                el.style.boxShadow = 'inset 0 0 0 2px #34a853';
+                includedCount++;
+            }
+
+            if (getComputedStyle(el).position === 'static') {
+                el.style.position = 'relative';
+            }
+        };
 
         // Find and highlight text elements within containers
-        for (const c of selectedContainers) {
-            const textElements = c.candidate.querySelectorAll(textElementSelector);
+        for (const container of selectedContainers.flatMap(c => c.elements)) {
+            // Text directly in the container, or in inline children such as <i>
+            // (e.g. the first paragraph of a Hacker News comment), is in no text
+            // element, so mark the container itself. Its text elements are still
+            // marked inside it, so it is left out of the ancestor lookup below.
+            const ownText = [...container.childNodes]
+                .filter(n => n.nodeType === Node.TEXT_NODE ||
+                    (n.nodeType === Node.ELEMENT_NODE && !n.matches(textElementSelector) && !n.querySelector(textElementSelector)))
+                .reduce((len, n) => len + n.textContent.trim().length, 0);
+            if (ownText >= 10) {
+                mark(container, 'included');
+                highlighted.delete(container);
+            }
+
+            const textElements = container.querySelectorAll(textElementSelector);
 
             for (const el of textElements) {
                 // Skip empty elements
                 const text = (el.innerText ?? el.textContent ?? '').trim();
                 if (text.length < 10) continue;
+                if (highlighted.has(el)) continue;
 
-                // Skip if an ancestor is already highlighted (nested elements)
-                let insideHighlighted = false;
+                // Same rule as extraction: only exclusions inside the container count
+                const excluded = isExcludedInContainer(el, container, EXCLUDE);
+
+                // Skip if the nearest highlighted ancestor already shows this
+                // state; an excluded element inside an included one is still shown
+                let ancestorType = null;
                 for (let anc = el.parentElement; anc; anc = anc.parentElement) {
-                    if (highlighted.has(anc)) { insideHighlighted = true; break; }
+                    if (highlighted.has(anc)) { ancestorType = highlighted.get(anc); break; }
                 }
-                if (insideHighlighted || highlighted.has(el)) continue;
-                highlighted.add(el);
+                if (ancestorType === 'excluded' || (ancestorType === 'included' && !excluded)) continue;
 
-                const excluded = isExcludedElement(el, EXCLUDE);
-
-                highlightedElements.push({
-                    element: el,
-                    origBoxShadow: el.style.boxShadow,
-                    origPosition: el.style.position,
-                    type: excluded ? 'excluded' : 'included'
-                });
-
-                if (excluded) {
-                    el.style.boxShadow = 'inset 0 0 0 2px #ea4335';
-                    excludedCount++;
-                } else {
-                    el.style.boxShadow = 'inset 0 0 0 2px #34a853';
-                    includedCount++;
-                }
-
-                if (getComputedStyle(el).position === 'static') {
-                    el.style.position = 'relative';
-                }
+                mark(el, excluded ? 'excluded' : 'included');
             }
         }
 
         // Show message overlay
-        const containerInfo = selectedContainers.map(c => `${c.selector} (${c.percent}%)`).join(', ');
+        const containerInfo = selectedContainers.map(c =>
+            `${c.selector}${c.elements.length > 1 ? ` x ${c.elements.length}` : ''} (${c.percent}%)`
+        ).join(', ');
         showHighlightMessage(
             `Container: ${containerInfo}\n` +
             `Text blocks: ${includedCount} included (green), ${excludedCount} excluded (red)\n\n` +
@@ -3799,6 +3991,17 @@
             display: block;
         }
 
+        /* Real element (not a box-shadow spread) so it captures pointer events:
+           page text behind the modal can't be selected or clicked. */
+        .summarizer-summary-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 2147483644;
+            background: rgba(0, 0, 0, 0.4);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
         .summarizer-summary-overlay {
             position: fixed;
             top: 12px;
@@ -3811,7 +4014,7 @@
             width: 96%;
             max-width: 760px;
             max-height: 90vh;
-            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35), 0 0 0 9999px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.35);
             animation: summarizer-summary-fadein 0.3s ease;
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             box-sizing: border-box;
@@ -4098,6 +4301,9 @@
             color: #fff;
         }
         @media print {
+            .summarizer-summary-backdrop {
+                display: none;
+            }
             .summarizer-summary-overlay {
                 position: static;
                 transform: none;
@@ -4716,6 +4922,7 @@
         // Build shadow DOM content
         setHTML(summaryOverlayShadow, `
         <style>${getSummaryOverlayShadowCSS()}</style>
+        <div class="summarizer-summary-backdrop"></div>
         <div class="summarizer-summary-overlay">
             <div class="summarizer-summary-container">
                 <div class="summarizer-summary-header">
@@ -4864,16 +5071,17 @@
             });
         });
 
-        // Close overlay when clicking the backdrop (the inner overlay element itself, not the container)
-        innerOverlay.addEventListener('click', (e) => {
-            if (e.target === innerOverlay) {
-                closeHandler();
-            }
-        });
-
         // Tracked at module level so removeSummaryOverlay() can unregister it on
         // every close path (buttons, backdrop, re-summarize) — not just Escape.
         summaryEscHandler = (e) => {
+            // Ctrl/Cmd+A selects the summary text instead of the page behind the modal
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
+                e.preventDefault();
+                window.getSelection()?.selectAllChildren(
+                    summaryOverlayShadow.querySelector('.summarizer-summary-content-inner')
+                );
+                return;
+            }
             if (e.key === 'Escape') {
                 // Close popover first if open
                 if (settingsPopover.classList.contains('open')) {
@@ -5036,6 +5244,8 @@
             self: [...new Set([...(EXCLUDE_GLOBAL.self || []), ...(EXCLUDE_DOMAIN.self || [])])],
             ancestors: [...new Set([...(EXCLUDE_GLOBAL.ancestors || []), ...(EXCLUDE_DOMAIN.ancestors || [])])]
         };
+        // Site rules, kept apart so a site container selector can override global exclusions
+        const SITE = { selectors: SELECTORS_DOMAIN, exclude: EXCLUDE_DOMAIN };
 
         if (SELECTORS_DOMAIN.length > 0 || (EXCLUDE_DOMAIN.self && EXCLUDE_DOMAIN.self.length > 0) || (EXCLUDE_DOMAIN.ancestors && EXCLUDE_DOMAIN.ancestors.length > 0)) {
             log('domain-specific additions for', HOST, ':', { selectors: SELECTORS_DOMAIN, excludes: EXCLUDE_DOMAIN });
@@ -5144,7 +5354,7 @@
             updateOverlayStatus('processing', mode, false);
 
             try {
-                const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+                const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
 
                 // Handle extraction errors
                 if (textData.error) {
@@ -5209,7 +5419,7 @@
 
         // Summary highlight handler
         function handleSummaryHighlight() {
-            showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+            showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
         }
 
         // Settings functions
@@ -5341,7 +5551,7 @@
         registerMenuCommand('Inspect element', handleInspection);
 
         registerMenuCommand('Included in summary', () => {
-            showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+            showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
         });
 
         // Bootstrap
@@ -5408,7 +5618,7 @@
         // Auto-simplify if enabled
         if (AUTO_SIMPLIFY) {
             setTimeout(() => {
-                const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+                const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
                 if (!textData.error && textData.source === 'article') {
                     log('Auto-simplify enabled, applying large summary...');
                     handleDigest('large');
