@@ -32,33 +32,60 @@ export function getSelectedText(minLength = 100) {
 }
 
 /**
- * Clean container text by removing UI and excluded elements
- * @param {Element} container - Container element
+ * Get the text of container elements without UI and excluded elements
+ * @param {Element[]} containers - Non-nested container elements
  * @param {Object} EXCLUDE - Exclusion rules
- * @returns {string} - Cleaned text
+ * @returns {string[]} - Cleaned text of each container, in order
  */
-function cleanContainerText(container, EXCLUDE) {
+function cleanContainerTexts(containers, EXCLUDE) {
     // Find UI and excluded elements on the live page, so selectors that
     // depend on ancestors outside the container (e.g. `.comment p`) match the
-    // same way as in isExcludedInContainer(), then remove their copies from a
-    // clone. Both self and ancestors exclusions drop the whole subtree.
-    const excluded = new Set(container.querySelectorAll(`[${UI_ATTR}]`));
-    for (const sel of [...(EXCLUDE.self || []), ...(EXCLUDE.ancestors || [])]) {
+    // same way as in isExcludedInContainer(). Both self and ancestors
+    // exclusions drop the whole subtree.
+    const selectors = [...(EXCLUDE.self || []), ...(EXCLUDE.ancestors || [])];
+    const excluded = new Set();
+    for (const container of containers) {
+        container.querySelectorAll(`[${UI_ATTR}]`).forEach(el => excluded.add(el));
+        for (const sel of selectors) {
+            try {
+                container.querySelectorAll(sel).forEach(el => excluded.add(el));
+            } catch {}
+        }
+    }
+
+    // innerText keeps paragraph breaks and skips script, style and hidden
+    // text, but only for elements on a rendered page: a detached clone gives
+    // raw textContent, which glues paragraphs together ("end.Start"). So hide
+    // the excluded elements, read the text, and restore their style attribute
+    // in the same task; the page is not painted in between.
+    if (typeof containers[0]?.innerText === 'string' && containers[0].isConnected) {
+        const saved = [...excluded].map(el => [el, el.getAttribute('style')]);
+        for (const [el] of saved) el.style.setProperty('display', 'none', 'important');
         try {
-            container.querySelectorAll(sel).forEach(el => excluded.add(el));
-        } catch {}
+            return containers.map(c => c.innerText.trim());
+        } finally {
+            for (const [el, style] of saved) {
+                // Set first: Chrome writes inline style changes to the
+                // attribute lazily, and removeAttribute() before that write
+                // still leaves style="" behind
+                el.setAttribute('style', style ?? '');
+                if (style === null) el.removeAttribute('style');
+            }
+        }
     }
 
-    const clone = container.cloneNode(true);
-    if (excluded.size) {
-        // A deep clone lists its elements in the same order as the original
-        const cloneEls = clone.querySelectorAll('*');
-        container.querySelectorAll('*').forEach((el, i) => {
-            if (excluded.has(el)) cloneEls[i].remove();
-        });
-    }
-
-    return (clone.innerText ?? clone.textContent ?? '').trim();
+    // No layout (e.g. jsdom): remove the excluded copies from a clone
+    return containers.map(container => {
+        const clone = container.cloneNode(true);
+        if (excluded.size) {
+            // A deep clone lists its elements in the same order as the original
+            const cloneEls = clone.querySelectorAll('*');
+            container.querySelectorAll('*').forEach((el, i) => {
+                if (excluded.has(el)) cloneEls[i].remove();
+            });
+        }
+        return (clone.innerText ?? clone.textContent ?? '').trim();
+    });
 }
 
 const textLength = (el) => (el.innerText ?? el.textContent ?? '').trim().length;
@@ -248,9 +275,7 @@ export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100, site = n
     }
 
     // Cleaned text of every element of the given candidates, in order
-    const joinText = (cands) => cands
-        .flatMap(c => c.elements)
-        .map(el => cleanContainerText(el, EXCLUDE))
+    const joinText = (cands) => cleanContainerTexts(cands.flatMap(c => c.elements), EXCLUDE)
         .filter(Boolean)
         .join('\n\n');
 
