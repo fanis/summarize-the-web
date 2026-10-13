@@ -120,7 +120,7 @@ test.describe('Summary overlay modal', () => {
     expect(selected).not.toContain('Page article paragraph');
   });
 
-  test('clicking the backdrop closes the summary without clicking page links', async ({ page }) => {
+  test('clicking the backdrop keeps the summary open and does not click page links', async ({ page }) => {
     await openSummary(page);
     const linkBox = await page.evaluate(() => {
       const r = document.getElementById('page-link').getBoundingClientRect();
@@ -129,7 +129,7 @@ test.describe('Summary overlay modal', () => {
     await page.mouse.click(linkBox.x, linkBox.y);
 
     expect(await page.evaluate(() => location.hash)).toBe('');
-    await expect(summaryOpen(page)).toHaveCount(0);
+    await expect(summaryOpen(page)).toHaveCount(1);
   });
 
   test('Ctrl+A selects the summary text only', async ({ page }) => {

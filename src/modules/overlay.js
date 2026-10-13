@@ -1624,16 +1624,6 @@ export async function showSummaryOverlay(summaryText, mode, container, OVERLAY_C
         });
     });
 
-    // Close overlay when clicking the backdrop. A drag-select that starts in the
-    // summary and ends on the backdrop targets their common ancestor, so it
-    // doesn't close the overlay.
-    const backdrop = summaryOverlayShadow.querySelector('.summarizer-summary-backdrop');
-    backdrop.addEventListener('click', (e) => {
-        if (e.target === backdrop) {
-            closeHandler();
-        }
-    });
-
     // Tracked at module level so removeSummaryOverlay() can unregister it on
     // every close path (buttons, backdrop, re-summarize) — not just Escape.
     summaryEscHandler = (e) => {
