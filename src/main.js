@@ -99,6 +99,8 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         self: [...new Set([...(EXCLUDE_GLOBAL.self || []), ...(EXCLUDE_DOMAIN.self || [])])],
         ancestors: [...new Set([...(EXCLUDE_GLOBAL.ancestors || []), ...(EXCLUDE_DOMAIN.ancestors || [])])]
     };
+    // Site rules, kept apart so a site container selector can override global exclusions
+    const SITE = { selectors: SELECTORS_DOMAIN, exclude: EXCLUDE_DOMAIN };
 
     if (SELECTORS_DOMAIN.length > 0 || (EXCLUDE_DOMAIN.self && EXCLUDE_DOMAIN.self.length > 0) || (EXCLUDE_DOMAIN.ancestors && EXCLUDE_DOMAIN.ancestors.length > 0)) {
         log('domain-specific additions for', HOST, ':', { selectors: SELECTORS_DOMAIN, excludes: EXCLUDE_DOMAIN });
@@ -207,7 +209,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
         updateOverlayStatus('processing', mode, false);
 
         try {
-            const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+            const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
 
             // Handle extraction errors
             if (textData.error) {
@@ -272,7 +274,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
 
     // Summary highlight handler
     function handleSummaryHighlight() {
-        showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+        showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
     }
 
     // Settings functions
@@ -404,7 +406,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     registerMenuCommand('Inspect element', handleInspection);
 
     registerMenuCommand('Included in summary', () => {
-        showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+        showSummaryHighlight(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
     });
 
     // Bootstrap
@@ -471,7 +473,7 @@ import { createOverlay, ensureOverlay, updateOverlayStatus, showSummaryOverlay, 
     // Auto-simplify if enabled
     if (AUTO_SIMPLIFY) {
         setTimeout(() => {
-            const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH);
+            const textData = getTextToDigest(SELECTORS, EXCLUDE, MIN_TEXT_LENGTH, SITE);
             if (!textData.error && textData.source === 'article') {
                 log('Auto-simplify enabled, applying large summary...');
                 handleDigest('large');

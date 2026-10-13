@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { extractArticleBody, getTextToDigest, isExcluded, getSelectedText, guessArticleContainer } from '../../src/modules/extraction.js';
+import { extractArticleBody, getTextToDigest, isExcluded, getSelectedText, guessArticleContainer, selectContainers } from '../../src/modules/extraction.js';
 import { DEFAULT_SELECTORS, DEFAULT_EXCLUDES, DEFAULT_MIN_TEXT_LENGTH } from '../../src/modules/config.js';
 import { createTestDOM } from '../setup.js';
 
@@ -425,6 +425,106 @@ describe('Extraction Module', () => {
       });
     });
 
+    describe('multiple matches and site rules', () => {
+      // Hacker News comment markup: the text sits in .commtext inside .comment
+      const hnComment = (n) => `
+        <div class="comment">
+          <div class="commtext c00">Comment ${n} opens with a bare text node that is long enough to count.<p>Comment ${n} continues in a paragraph element.</p></div>
+          <div class="reply"><p>reply ${n}</p></div>
+        </div>`;
+      const GLOBAL_EXCLUDE = { self: [], ancestors: ['.comment', '.comments'] };
+
+      it('should use every match of a site selector, overriding global ancestor exclusions', () => {
+        createTestDOM(`<table class="comment-tree">${[1, 2, 3].map(hnComment).join('')}</table>`);
+        const site = { selectors: ['.commtext'], exclude: { self: [], ancestors: [] } };
+
+        const result = extractArticleBody(['article', '.commtext'], GLOBAL_EXCLUDE, 100, site);
+
+        expect(result.text).toContain('Comment 1 opens');
+        expect(result.text).toContain('Comment 2 continues');
+        expect(result.text).toContain('Comment 3 opens');
+        expect(result.text).not.toContain('reply');
+      });
+
+      it('should still drop site matches excluded by site exclusions', () => {
+        createTestDOM(`
+          <div class="flagged">${hnComment(1)}</div>
+          ${hnComment(2)}${hnComment(3)}`);
+        const site = { selectors: ['.commtext'], exclude: { self: [], ancestors: ['.flagged'] } };
+
+        const result = extractArticleBody(['.commtext'], GLOBAL_EXCLUDE, 50, site);
+
+        expect(result.text).not.toContain('Comment 1');
+        expect(result.text).toContain('Comment 2');
+        expect(result.text).toContain('Comment 3');
+      });
+
+      it('should drop global selector matches inside a globally excluded ancestor', () => {
+        createTestDOM(`${[1, 2, 3].map(hnComment).join('')}`);
+
+        const selection = selectContainers(['.commtext'], 50, GLOBAL_EXCLUDE);
+
+        expect(selection?.candidates.some(c => c.selector === '.commtext')).toBeFalsy();
+      });
+
+      it('should skip global matches inside excluded comments (WordPress comment articles)', () => {
+        createTestDOM(`
+          <article id="main"><p>${ARTICLE_TEXT}</p></article>
+          <ol class="comments">
+            <li><article class="comment-body"><p>Reader comment that is long enough to look like real content, but sits in the comment list.</p></article></li>
+          </ol>`);
+
+        const result = extractArticleBody(['article'], GLOBAL_EXCLUDE);
+
+        expect(result.text).toContain('sample article');
+        expect(result.text).not.toContain('Reader comment');
+      });
+
+      it('should keep only the dominant match of a global selector', () => {
+        createTestDOM(`
+          <article id="main"><p>${ARTICLE_TEXT} ${ARTICLE_TEXT}</p></article>
+          <article class="teaser"><p>Teaser one</p></article>
+          <article class="teaser"><p>Teaser two</p></article>`);
+
+        const result = extractArticleBody(['article'], { self: [], ancestors: [] });
+
+        expect(result.text).toContain('sample article');
+        expect(result.text).not.toContain('Teaser');
+        expect(result.container.id).toBe('main');
+      });
+
+      it('should use every match of a global selector when none is dominant', () => {
+        createTestDOM(`
+          <div class="post"><p>First post. ${ARTICLE_TEXT}</p></div>
+          <div class="post"><p>Second post. ${ARTICLE_TEXT}</p></div>
+          <div class="post"><p>Third post. ${ARTICLE_TEXT}</p></div>`);
+
+        const result = extractArticleBody(['.post'], { self: [], ancestors: [] });
+
+        expect(result.text).toContain('First post');
+        expect(result.text).toContain('Second post');
+        expect(result.text).toContain('Third post');
+      });
+
+      it('should count a match nested in another match of the same selector once', () => {
+        createTestDOM(`<div class="post"><p>Outer post. ${ARTICLE_TEXT}</p><div class="post"><p>Inner post text.</p></div></div>`);
+
+        const result = extractArticleBody(['.post'], { self: [], ancestors: [] });
+
+        expect(result.text.match(/Inner post text/g)).toHaveLength(1);
+      });
+
+      it('should match exclusion selectors against ancestors outside the container', () => {
+        createTestDOM(`<div class="comment"><div class="commtext">Bare text node that is long enough to be counted as content here.<p>Paragraph removed by a descendant selector.</p></div></div>`);
+        const site = { selectors: ['.commtext'], exclude: { self: [], ancestors: [] } };
+
+        const result = extractArticleBody(['.commtext'], { self: ['.comment p'], ancestors: [] }, 20, site);
+
+        expect(result.text).toContain('Bare text node');
+        expect(result.text).not.toContain('Paragraph removed');
+      });
+    });
+
     describe('with DEFAULT_SELECTORS and DEFAULT_EXCLUDES', () => {
       it('should extract from typical news article structure', () => {
         createTestDOM(`
@@ -570,7 +670,7 @@ describe('Extraction Module', () => {
         const guess = guessArticleContainer(100);
 
         expect(guess).not.toBeNull();
-        expect(guess.candidate.className).toBe('x-content');
+        expect(guess.elements[0].className).toBe('x-content');
         expect(guess.selector).toBe('(auto-detected)');
       });
 
@@ -588,7 +688,7 @@ describe('Extraction Module', () => {
         const guess = guessArticleContainer(100);
 
         expect(guess).not.toBeNull();
-        expect(guess.candidate.id).toBe('inner');
+        expect(guess.elements[0].id).toBe('inner');
       });
 
       it('should count nested text blocks once and descend to the tightest wrapper', () => {
@@ -603,7 +703,7 @@ describe('Extraction Module', () => {
         expect(guess).not.toBeNull();
         // Only the leaf <p> is counted; the blockquote wrapping it holds
         // 100% of the counted text and is the deepest such element.
-        expect(guess.candidate.tagName).toBe('BLOCKQUOTE');
+        expect(guess.elements[0].tagName).toBe('BLOCKQUOTE');
         expect(guess.length).toBe(ARTICLE_TEXT.length);
       });
 

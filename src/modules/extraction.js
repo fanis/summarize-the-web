@@ -4,7 +4,7 @@
 
 import { UI_ATTR } from './config.js';
 import { log } from './utils.js';
-import { isExcludedElement } from './selectors.js';
+import { isExcludedElement, containerExclusions } from './selectors.js';
 
 /**
  * Check if element is excluded based on exclusion rules
@@ -38,30 +38,58 @@ export function getSelectedText(minLength = 100) {
  * @returns {string} - Cleaned text
  */
 function cleanContainerText(container, EXCLUDE) {
-    const clone = container.cloneNode(true);
-
-    // Remove UI elements
-    clone.querySelectorAll(`[${UI_ATTR}]`).forEach(el => el.remove());
-
-    // Remove excluded elements (self)
-    if (EXCLUDE.self) {
-        for (const sel of EXCLUDE.self) {
-            try {
-                clone.querySelectorAll(sel).forEach(el => el.remove());
-            } catch {}
-        }
+    // Find UI and excluded elements on the live page, so selectors that
+    // depend on ancestors outside the container (e.g. `.comment p`) match the
+    // same way as in isExcludedInContainer(), then remove their copies from a
+    // clone. Both self and ancestors exclusions drop the whole subtree.
+    const excluded = new Set(container.querySelectorAll(`[${UI_ATTR}]`));
+    for (const sel of [...(EXCLUDE.self || []), ...(EXCLUDE.ancestors || [])]) {
+        try {
+            container.querySelectorAll(sel).forEach(el => excluded.add(el));
+        } catch {}
     }
 
-    // Remove excluded containers (ancestors)
-    if (EXCLUDE.ancestors) {
-        for (const sel of EXCLUDE.ancestors) {
-            try {
-                clone.querySelectorAll(sel).forEach(el => el.remove());
-            } catch {}
-        }
+    const clone = container.cloneNode(true);
+    if (excluded.size) {
+        // A deep clone lists its elements in the same order as the original
+        const cloneEls = clone.querySelectorAll('*');
+        container.querySelectorAll('*').forEach((el, i) => {
+            if (excluded.has(el)) cloneEls[i].remove();
+        });
     }
 
     return (clone.innerText ?? clone.textContent ?? '').trim();
+}
+
+const textLength = (el) => (el.innerText ?? el.textContent ?? '').trim().length;
+
+/**
+ * Collect the container elements one selector matches. Matches that are
+ * excluded (see containerExclusions) or nested inside an earlier match are
+ * skipped. Site selectors keep every match, so repeated blocks such as forum
+ * comments are all summarized. Global selectors are generic (`article` also
+ * matches teaser cards), so when one match holds at least 70% of the
+ * selector's text, only that match is kept.
+ * @returns {Element[]} - Matches in document order
+ */
+function containerMatches(selector, EXCLUDE, site) {
+    const rules = EXCLUDE ? containerExclusions(selector, EXCLUDE, site) : null;
+    const elements = [];
+    for (const el of document.querySelectorAll(selector)) {
+        if (rules && isExcludedElement(el, rules)) continue;
+        // Document order: a nested match follows the match that contains it
+        const last = elements[elements.length - 1];
+        if (last && last.contains(el)) continue;
+        elements.push(el);
+    }
+
+    if (elements.length > 1 && !site?.selectors?.includes(selector)) {
+        const lengths = elements.map(textLength);
+        const total = lengths.reduce((a, b) => a + b, 0);
+        const max = Math.max(...lengths);
+        if (total > 0 && max >= total * 0.7) return [elements[lengths.indexOf(max)]];
+    }
+    return elements;
 }
 
 // Text blocks counted by the density fallback. Only leaf blocks are counted
@@ -77,8 +105,9 @@ const TEXT_BLOCK_SELECTOR = 'p, li, blockquote, pre';
  * text — the tightest wrapper around the main body of the page.
  * @param {number} minLength - Minimum total block text required to guess
  * @param {number} [bodyLength] - Page text length, for the percent stat
- * @returns {Object|null} - Candidate entry { candidate, selector, length, percent }
- *   with selector set to '(auto-detected)', or null if there isn't enough text
+ * @returns {Object|null} - Candidate entry { elements, selector, length, percent }
+ *   with one element and selector set to '(auto-detected)', or null if there
+ *   isn't enough text
  */
 export function guessArticleContainer(minLength = 100, bodyLength = 0) {
     if (!bodyLength) {
@@ -119,7 +148,7 @@ export function guessArticleContainer(minLength = 100, bodyLength = 0) {
 
     const rawText = (container.innerText ?? container.textContent ?? '').trim();
     return {
-        candidate: container,
+        elements: [container],
         selector: '(auto-detected)',
         length: rawText.length,
         percent: Math.round((rawText.length / bodyLength) * 100)
@@ -130,14 +159,17 @@ export function guessArticleContainer(minLength = 100, bodyLength = 0) {
  * Find and rank article container candidates. Shared by extraction and the
  * summary-highlight inspection view so the dominance heuristic lives in one
  * place. Falls back to a text-density guess when no selector matches
- * anything usable.
+ * anything usable. Each candidate is one selector with all the container
+ * elements it matches (see containerMatches).
  * @param {string[]} SELECTORS - CSS selectors to find containers
  * @param {number} minLength - Minimum text length for a significant container
+ * @param {Object} [EXCLUDE] - Merged exclusion rules; excluded matches are skipped
+ * @param {Object} [site] - { selectors, exclude } for the current site
  * @returns {Object|null} - { selected, candidates } where selected holds one
  *   entry (single container) or several (non-nested containers to combine),
  *   or null when no selector matched and the density fallback found nothing.
  */
-export function selectContainers(SELECTORS, minLength = 100) {
+export function selectContainers(SELECTORS, minLength = 100, EXCLUDE = null, site = null) {
     // Get total page text for comparison
     const bodyText = (document.body.innerText ?? document.body.textContent ?? '').trim();
     const bodyLength = bodyText.length || 1; // Avoid division by zero
@@ -145,17 +177,18 @@ export function selectContainers(SELECTORS, minLength = 100) {
     // Collect all matching candidates with their text stats
     const candidates = [];
     for (const selector of SELECTORS) {
+        let elements;
         try {
-            const candidate = document.querySelector(selector);
-            if (!candidate) continue;
-
-            const rawText = (candidate.innerText ?? candidate.textContent ?? '').trim();
-            const percent = Math.round((rawText.length / bodyLength) * 100);
-
-            candidates.push({ candidate, selector, length: rawText.length, percent });
+            elements = containerMatches(selector, EXCLUDE, site);
         } catch (e) {
             // Invalid selector, skip
+            continue;
         }
+        if (elements.length === 0) continue;
+
+        const length = elements.reduce((sum, el) => sum + textLength(el), 0);
+        const percent = Math.round((length / bodyLength) * 100);
+        candidates.push({ elements, selector, length, percent });
     }
 
     if (candidates.length === 0) {
@@ -184,10 +217,9 @@ export function selectContainers(SELECTORS, minLength = 100) {
 
     // Multiple significant containers - combine non-nested ones
     const significant = candidates.filter(c => c.percent >= 15 && c.length > minLength);
+    const overlaps = (a, b) => a.elements.some(x => b.elements.some(y => x.contains(y) || y.contains(x)));
     const nonNested = significant.filter((c, i) =>
-        !significant.some((other, j) => i !== j &&
-            (other.candidate.contains(c.candidate) || c.candidate.contains(other.candidate))
-        )
+        !significant.some((other, j) => i !== j && overlaps(c, other))
     );
 
     return { selected: nonNested.length > 1 ? nonNested : [best], candidates };
@@ -198,10 +230,11 @@ export function selectContainers(SELECTORS, minLength = 100) {
  * @param {string[]} SELECTORS - CSS selectors to find container
  * @param {Object} EXCLUDE - Exclusion rules
  * @param {number} minLength - Minimum text length required
+ * @param {Object} [site] - { selectors, exclude } for the current site
  * @returns {Object|null} - { text, container, title } or { error, ... } or null
  */
-export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
-    const selection = selectContainers(SELECTORS, minLength);
+export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100, site = null) {
+    const selection = selectContainers(SELECTORS, minLength, EXCLUDE, site);
     if (!selection) {
         log('No article container found');
         return { error: 'no_container' };
@@ -214,9 +247,16 @@ export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
         log('Container candidates:', topCandidates.map(c => `${c.selector} (${c.percent}%)`).join(', '));
     }
 
+    // Cleaned text of every element of the given candidates, in order
+    const joinText = (cands) => cands
+        .flatMap(c => c.elements)
+        .map(el => cleanContainerText(el, EXCLUDE))
+        .filter(Boolean)
+        .join('\n\n');
+
     if (selected.length > 1) {
         // Combine cleaned text from multiple containers
-        const combinedText = selected.map(c => cleanContainerText(c.candidate, EXCLUDE)).join('\n\n');
+        const combinedText = joinText(selected);
         log('Combined', selected.length, 'containers:', selected.map(c => c.selector).join(', '));
 
         if (combinedText.length < minLength) {
@@ -225,12 +265,13 @@ export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
         }
 
         log(`Extracted ${combinedText.length} characters from combined containers`);
-        return { text: combinedText, elements: null, container: selected[0].candidate, title: null };
+        return { text: combinedText, elements: null, container: selected[0].elements[0], title: null };
     }
 
     const best = selected[0];
-    const container = best.candidate;
-    log('Selected container:', best.selector, 'with', best.length, 'chars', `(${best.percent}% of page)`);
+    const container = best.elements[0];
+    log('Selected container:', best.selector, `(${best.elements.length} match${best.elements.length === 1 ? '' : 'es'})`,
+        'with', best.length, 'chars', `(${best.percent}% of page)`);
 
     // Try to find article title
     let title = null;
@@ -253,8 +294,8 @@ export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
         }
     }
 
-    // Get cleaned text from container
-    const text = cleanContainerText(container, EXCLUDE);
+    // Get cleaned text from all matches of the container selector
+    const text = joinText([best]);
 
     if (!text) {
         log('No text found in container');
@@ -281,9 +322,10 @@ export function extractArticleBody(SELECTORS, EXCLUDE, minLength = 100) {
  * @param {string[]} SELECTORS - CSS selectors to find container
  * @param {Object} EXCLUDE - Exclusion rules
  * @param {number} minLength - Minimum text length required
+ * @param {Object} [site] - { selectors, exclude } for the current site
  * @returns {Object} - { text, source, ... } or { error, ... }
  */
-export function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100) {
+export function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100, site = null) {
     // First check if user has selected text
     const selected = getSelectedText(minLength);
     if (selected) {
@@ -294,7 +336,7 @@ export function getTextToDigest(SELECTORS, EXCLUDE, minLength = 100) {
     }
 
     // Otherwise extract article body
-    const article = extractArticleBody(SELECTORS, EXCLUDE, minLength);
+    const article = extractArticleBody(SELECTORS, EXCLUDE, minLength, site);
     if (article.error) {
         return { error: article.error, actualLength: article.actualLength, minLength, source: 'article' };
     }

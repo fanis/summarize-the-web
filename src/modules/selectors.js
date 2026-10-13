@@ -84,6 +84,45 @@ export function isExcludedElement(el, EXCLUDE) {
 }
 
 /**
+ * Get the exclusion rules that can drop a container match. A match from a
+ * site (domain) selector is dropped only by site exclusions: naming the
+ * container for the site overrides a global exclusion of its ancestors
+ * (e.g. `.commtext` inside `.comment` on Hacker News).
+ * @param {string} selector - Container selector that produced the match
+ * @param {Object} EXCLUDE - Merged global + site exclusion rules
+ * @param {Object} [site] - { selectors, exclude } for the current site
+ * @returns {Object} - Exclusion rules with self and ancestors arrays
+ */
+export function containerExclusions(selector, EXCLUDE, site) {
+    if (site?.selectors?.includes(selector)) {
+        return site.exclude || { self: [], ancestors: [] };
+    }
+    return EXCLUDE;
+}
+
+/**
+ * Check whether an element inside a container is excluded: the element, or
+ * an ancestor below the container, matches any exclusion selector. This is
+ * the rule extraction uses when it removes excluded elements from the
+ * container text, so the highlight views must use it too.
+ * @param {Element} el - Element inside the container (or the container itself)
+ * @param {Element} container - Container element
+ * @param {Object} EXCLUDE - Object with self and ancestors selector arrays
+ * @returns {boolean}
+ */
+export function isExcludedInContainer(el, container, EXCLUDE) {
+    const selectors = [...(EXCLUDE.self || []), ...(EXCLUDE.ancestors || [])];
+    for (let node = el; node && node !== container; node = node.parentElement) {
+        for (const sel of selectors) {
+            try {
+                if (node.matches(sel)) return true;
+            } catch {}
+        }
+    }
+    return false;
+}
+
+/**
  * Compile selector list into CSS selector string
  * @param {string[]} selectors - Array of CSS selectors
  * @returns {string} - Comma-separated selector string

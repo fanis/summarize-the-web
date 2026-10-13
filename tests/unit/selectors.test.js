@@ -6,11 +6,52 @@ import {
   compiledSelectors,
   findMatchingSelectors,
   findMatchingExclusions,
-  generateCSSSelector
+  generateCSSSelector,
+  containerExclusions,
+  isExcludedInContainer
 } from '../../src/modules/selectors.js';
 import { createTestDOM } from '../setup.js';
 
 describe('Selector Utilities', () => {
+  describe('containerExclusions', () => {
+    const EXCLUDE = { self: ['.ad'], ancestors: ['.comment', '.flagged'] };
+    const site = { selectors: ['.commtext'], exclude: { self: [], ancestors: ['.flagged'] } };
+
+    it('returns only site exclusions for a site selector', () => {
+      expect(containerExclusions('.commtext', EXCLUDE, site)).toEqual(site.exclude);
+    });
+
+    it('returns the merged exclusions for a global selector', () => {
+      expect(containerExclusions('article', EXCLUDE, site)).toBe(EXCLUDE);
+    });
+
+    it('returns the merged exclusions when there are no site rules', () => {
+      expect(containerExclusions('.commtext', EXCLUDE, null)).toBe(EXCLUDE);
+    });
+  });
+
+  describe('isExcludedInContainer', () => {
+    const EXCLUDE = { self: ['.ad'], ancestors: ['.comment'] };
+
+    it('ignores exclusions that match only outside the container', () => {
+      createTestDOM('<div class="comment"><div class="commtext"><p id="t">text</p></div></div>');
+      const container = document.querySelector('.commtext');
+      expect(isExcludedInContainer(document.getElementById('t'), container, EXCLUDE)).toBe(false);
+    });
+
+    it('excludes an element below an excluded element inside the container', () => {
+      createTestDOM('<article><div class="comment"><p id="t">text</p></div></article>');
+      const container = document.querySelector('article');
+      expect(isExcludedInContainer(document.getElementById('t'), container, EXCLUDE)).toBe(true);
+    });
+
+    it('excludes everything below a self exclusion, like extraction does', () => {
+      createTestDOM('<article><div class="ad"><p id="t">text</p></div></article>');
+      const container = document.querySelector('article');
+      expect(isExcludedInContainer(document.getElementById('t'), container, EXCLUDE)).toBe(true);
+    });
+  });
+
   describe('globToRegExp', () => {
     it('should convert simple glob to regex', () => {
       const regex = globToRegExp('*.example.com');

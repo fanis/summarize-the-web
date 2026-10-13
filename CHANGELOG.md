@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Container selectors use every match.** A selector used to pick only the first element it matched, so a domain selector for repeated blocks (such as `.commtext` for Hacker News comments) summarized one comment. Domain selectors now collect every match. Global selectors collect every match too, but when one match holds at least 70% of the selector's text, only that match is used, so `article` still picks the main story over teaser cards.
+- **Domain container selectors override global exclusions.** A container match inside an excluded element is now skipped, but global exclusions no longer apply to containers named by a domain selector. On Hacker News, `.commtext` works although every comment sits inside `.comment`, a default global exclusion. Domain exclusions still apply.
+
 ### Fixed
+- "Show Included Elements" and Inspect Element marked text red when an exclusion matched any ancestor, also outside the container, while extraction removed only excluded elements inside the container, so red text was still sent to the API. Both views now use the extraction rule. "Show Included Elements" also marks containers whose text is not in a paragraph element (such as the first paragraph of a Hacker News comment) and shows the match count, e.g. `.commtext x 393`.
 - While the summary overlay was open, the page text behind it could still be selected and its links clicked: the dimmed area was a box-shadow, which does not capture the mouse. The overlay now has a real backdrop element. Clicking the backdrop closes the summary, and Ctrl/Cmd+A selects the summary text instead of the whole page.
 
 ## [2.10.1] - 2026-09-30
