@@ -664,3 +664,89 @@ test.describe('Overlay CSS (Real Code)', () => {
     expect(hasAttr).toBe(true);
   });
 });
+
+// Page CSS that matches the badge host beats normal :host rules. This is the
+// reset worksinprogress.co uses, which left the badge static below the footer.
+test.describe('Overlay on a page with a global CSS reset (Real Code)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.setContent(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Reset Test</title>
+          <style>
+            *:where(:not(html,iframe,canvas,img,svg,video,audio):not(svg *,symbol *)) {
+              all: unset;
+              display: revert;
+            }
+            .tall { height: 3000px; }
+          </style>
+        </head>
+        <body>
+          <article class="tall"><p>Content</p></article>
+        </body>
+      </html>
+    `);
+    await page.evaluate(gmMocks);
+  });
+
+  function badgeBox(page) {
+    return page.evaluate(() => {
+      const overlay = document.querySelector('.summarizer-overlay');
+      const rect = overlay.getBoundingClientRect();
+      return {
+        position: getComputedStyle(overlay).position,
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        viewportWidth: document.documentElement.clientWidth,
+        viewportHeight: window.innerHeight
+      };
+    });
+  }
+
+  test('badge stays fixed and docked at the right edge', async ({ page }) => {
+    await injectUserscript(page);
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
+
+    const box = await badgeBox(page);
+    expect(box.position).toBe('fixed');
+    expect(box.width).toBe(150);
+    expect(box.left).toBe(box.viewportWidth - 150);
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.top).toBeLessThan(box.viewportHeight);
+  });
+
+  test('collapsed badge slides off the right edge', async ({ page }) => {
+    await injectUserscript(page);
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
+
+    await page.click('.summarizer-slide-handle');
+    await page.waitForTimeout(400);
+
+    const box = await badgeBox(page);
+    expect(box.left).toBe(box.viewportWidth);
+  });
+
+  test('dragging still moves the badge', async ({ page }) => {
+    await injectUserscript(page);
+    await page.waitForSelector('.summarizer-overlay', { timeout: 5000 });
+
+    const handle = await page.evaluate(() => {
+      const rect = document.querySelector('.summarizer-overlay')
+        .shadowRoot.querySelector('.summarizer-handle').getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    });
+    const before = await badgeBox(page);
+
+    await page.mouse.move(handle.x, handle.y);
+    await page.mouse.down();
+    await page.mouse.move(handle.x, 100, { steps: 10 });
+    await page.mouse.up();
+
+    const after = await badgeBox(page);
+    expect(after.top).toBeLessThan(before.top - 100);
+    expect(after.left).toBe(after.viewportWidth - 150);
+  });
+});
