@@ -122,20 +122,25 @@ function updateAllThemes(theme) {
  * Generate CSS for badge shadow DOM
  */
 export function getBadgeShadowCSS() {
+    // The host element sits in the page, so page CSS that matches it beats
+    // these :host rules unless they are !important (e.g. the global reset
+    // `*:where(...) { all: unset }` on worksinprogress.co made the badge
+    // static at the bottom of the page). `all` and `top` stay normal: an
+    // !important :host rule would override the inline top set by dragging.
     return `
         :host {
             all: initial;
-            position: fixed;
-            z-index: 2147483646;
-            font: 13px/1.4 system-ui, sans-serif;
-            color: #1a1a1a;
-            box-sizing: border-box;
-            width: 150px;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            user-select: none;
-            right: 0;
-            transform: translateX(0);
-            display: block;
+            position: fixed !important;
+            z-index: 2147483646 !important;
+            font: 13px/1.4 system-ui, sans-serif !important;
+            color: #1a1a1a !important;
+            box-sizing: border-box !important;
+            width: 150px !important;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            user-select: none !important;
+            right: 0 !important;
+            transform: translateX(0) !important;
+            display: block !important;
         }
         :host .summarizer-wrapper {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -147,7 +152,7 @@ export function getBadgeShadowCSS() {
             transition: box-shadow 0.3s ease, border-radius 0.3s ease;
         }
         :host(.collapsed) {
-            transform: translateX(100%);
+            transform: translateX(100%) !important;
         }
         :host(.collapsed) .summarizer-wrapper {
             border-right: none;
@@ -155,8 +160,8 @@ export function getBadgeShadowCSS() {
             box-shadow: -4px 0 22px rgba(0,0,0,.18);
         }
         :host(.dragging) {
-            transition: none;
-            cursor: grabbing;
+            transition: none !important;
+            cursor: grabbing !important;
         }
         :host .summarizer-slide-handle {
             position: absolute;
